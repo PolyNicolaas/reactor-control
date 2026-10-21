@@ -1,95 +1,297 @@
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import type { App, Column } from '../core/app';
+import type { App } from '../core/app';
+import type { DeviceInstance } from '../core/device';
+import { decimalsFor, fmt, h } from './dom';
 
-const DASHES: number[][] = [[], [8, 4], [2, 4], [12, 4, 2, 4]];
+// Channel colours inside a lane; a setpoint takes the colour of the reading it drives.
+const CHANNEL_COLORS = ['#2f7de1', '#e0742f', '#2fa66a', '#a64fd6', '#d23f6b', '#1f9fb0'];
+const RANGES = [
+  { label: '5 min', min: 5 },
+  { label: '15 min', min: 15 },
+  { label: '30 min', min: 30 },
+  { label: '1 h', min: 60 },
+];
+const STATE_KEY = 'ika-control.chart';
+// Fixed axis widths + right padding keep every lane's plot area aligned on the shared time axis.
+const AXIS_W = 72;
+// Smallest y span per unit, so sensor noise is not blown up to fill the lane.
+const MIN_SPAN: Record<string, number> = { '°C': 10, rpm: 100, Ncm: 5 };
 
-/** Live chart: one colour per device, a dash style per channel, one axis per unit. */
+function minSpan(min: number | null, max: number | null, span: number): [number, number] {
+  if (min == null || max == null || !Number.isFinite(min) || !Number.isFinite(max)) return [0, span];
+  const mid = (min + max) / 2;
+  const half = Math.max((max - min) / 2 * 1.1, span / 2);
+  const lo = min >= 0 && mid - half < 0 ? 0 : mid - half;
+  return [lo, lo + Math.max(2 * half, max - lo)];
+}
+
+interface LaneSeries {
+  key: string;          // row key in app.history
+  short: string;        // "Speed", "Speed setpoint"
+  unit: string;
+  color: string;
+  setpoint: boolean;
+}
+
+interface Lane {
+  dev: DeviceInstance;
+  series: LaneSeries[];
+  shown: LaneSeries[];
+  plot?: uPlot;
+  plotHost: HTMLElement;
+  chips: Map<string, HTMLElement>;
+  el: HTMLElement;
+}
+
+interface ChartState {
+  rangeMin: number;
+  visible: Record<string, boolean>;   // series key -> shown (default: readings on, setpoints off)
+  hiddenLanes: string[];              // device ids
+}
+
+function laneSeries(dev: DeviceInstance): LaneSeries[] {
+  const colorOf: Record<string, string> = {};
+  const out: LaneSeries[] = [];
+  dev.driver.readings.forEach((r, i) => {
+    colorOf[r.key] = CHANNEL_COLORS[i % CHANNEL_COLORS.length];
+    if (r.chart) out.push({ key: `${dev.id}.${r.key}`, short: r.label, unit: r.unit, color: colorOf[r.key], setpoint: false });
+  });
+  for (const sp of dev.driver.setpoints) {
+    out.push({
+      key: `${dev.id}.sp.${sp.key}`,
+      short: `${sp.label} setpoint`,
+      unit: sp.unit,
+      color: (sp.actualKey && colorOf[sp.actualKey]) || '#888',
+      setpoint: true,
+    });
+  }
+  return out;
+}
+
+/**
+ * Live chart: one lane per device, all lanes on one shared time axis with a linked cursor.
+ * Filters: time range, which lanes are shown, which channels are drawn in each lane.
+ */
 export function liveChart(app: App, host: HTMLElement): { rebuild: () => void } {
-  let plot: uPlot | undefined;
-  let cols: Column[] = [];
+  const state: ChartState = loadState();
+  let lanes: Lane[] = [];
+
+  const rangeBar = h('div', { class: 'seg', role: 'group', 'aria-label': 'Time range' });
+  const laneBar = h('div', { class: 'lane-filter', role: 'group', 'aria-label': 'Lanes' });
+  const lanesEl = h('div', { class: 'lanes' });
+  host.replaceChildren(h('div', { class: 'chart-tools' }, rangeBar, laneBar), lanesEl);
 
   const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
+  const visible = (s: LaneSeries) => state.visible[s.key] ?? !s.setpoint;
 
-  function rebuild() {
-    plot?.destroy();
-    plot = undefined;
-    host.replaceChildren();
-    cols = app.columns().filter((c) => {
-      if (c.kind === 'switch') return false;
-      const dev = app.devices.find((d) => d.id === c.deviceId)!;
-      if (c.kind === 'setpoint') return true;
-      const key = c.key.slice(c.deviceId.length + 1);
-      return dev.driver.readings.find((r) => r.key === key)?.chart;
-    });
-    if (!cols.length) {
-      host.append(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Add a device to see live values here.' }));
-      return;
+  function save() {
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore */
     }
-    const units = [...new Set(cols.map((c) => c.unit))];
-    const ink = css('--ink-2');
-    const grid = css('--grid');
-    const channelIndex = new Map<string, number>();
-    const series: uPlot.Series[] = [
-      {},
-      ...cols.map((c) => {
-        const dev = app.devices.find((d) => d.id === c.deviceId)!;
-        const n = channelIndex.get(c.deviceId) ?? 0;
-        if (c.kind === 'actual') channelIndex.set(c.deviceId, n + 1);
-        return {
-          label: c.label,
-          scale: c.unit,
-          stroke: dev.color,
-          width: c.kind === 'setpoint' ? 1 : 2,
-          dash: c.kind === 'setpoint' ? [3, 3] : DASHES[n % DASHES.length],
-          show: c.kind !== 'setpoint',
-          spanGaps: false,
-          value: (_u: uPlot, v: number | null) => (v == null ? '—' : v.toFixed(c.unit === 'rpm' ? 0 : 1)),
-        } as uPlot.Series;
-      }),
-    ];
-    const axes: uPlot.Axis[] = [
-      {
-        stroke: ink,
-        grid: { stroke: grid, width: 1 },
-        ticks: { stroke: grid },
-        space: 90,
-        values: (_u, splits) => splits.map((s) => new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })),
-      },
-      ...units.map((u, i) => ({
-        scale: u,
-        label: u,
-        side: i === 0 ? 3 : 1,
-        stroke: ink,
-        grid: { show: i === 0, stroke: grid, width: 1 },
-        ticks: { stroke: grid },
-        size: 52,
-      })),
-    ];
-    const width = Math.max(300, host.clientWidth);
-    plot = new uPlot(
-      {
-        width,
-        height: Math.min(360, Math.max(220, Math.round(width * 0.4))),
-        series,
-        axes,
-        scales: { x: { time: true } },
-        legend: { live: true },
-        cursor: { drag: { x: false, y: false } },
-      },
-      data(),
-      host,
+  }
+
+  function renderRangeBar() {
+    rangeBar.replaceChildren(
+      ...RANGES.map((r) =>
+        h('button', {
+          'aria-pressed': String(state.rangeMin === r.min),
+          onclick: () => {
+            state.rangeMin = r.min;
+            save();
+            renderRangeBar();
+            for (const l of lanes) l.plot?.setData(data(l.shown), true);
+          },
+        }, r.label),
+      ),
     );
   }
 
-  function data(): uPlot.AlignedData {
-    const h = app.history;
-    return [h.map((r) => r.t / 1000), ...cols.map((c) => h.map((r) => r.v[c.key] ?? null))] as uPlot.AlignedData;
+  function renderLaneBar() {
+    laneBar.replaceChildren(
+      ...(app.devices.length > 1
+        ? app.devices.map((d) =>
+            h('button', {
+              class: 'lane-toggle',
+              style: `--dev:${d.color}`,
+              'aria-pressed': String(!state.hiddenLanes.includes(d.id)),
+              onclick: () => {
+                state.hiddenLanes = state.hiddenLanes.includes(d.id) ? state.hiddenLanes.filter((x) => x !== d.id) : [...state.hiddenLanes, d.id];
+                save();
+                rebuild();
+              },
+            }, h('span', { class: 'dot' }), d.label),
+          )
+        : []),
+    );
   }
 
-  app.sampled.on(() => plot?.setData(data()));
-  new ResizeObserver(() => plot && plot.setSize({ width: Math.max(300, host.clientWidth), height: plot.height })).observe(host);
+  function data(series: LaneSeries[]): uPlot.AlignedData {
+    const hist = app.history;
+    return [hist.map((r) => r.t / 1000), ...series.map((s) => hist.map((r) => r.v[s.key] ?? null))] as uPlot.AlignedData;
+  }
+
+  /** Most right-hand axes any lane has; lanes with fewer get padding so plot areas line up. */
+  function maxRightAxes(): number {
+    return Math.max(0, ...lanes.map((l) => new Set(l.series.filter(visible).map((s) => s.unit)).size - 1));
+  }
+
+  function buildPlot(lane: Lane, isLast: boolean) {
+    lane.plot?.destroy();
+    lane.plotHost.replaceChildren();
+    const shown = lane.series.filter(visible);
+    lane.shown = shown;
+    if (!shown.length) {
+      lane.plotHost.append(h('p', { class: 'empty small' }, 'No channels selected for this lane.'));
+      lane.plot = undefined;
+      return;
+    }
+    const ink = css('--ink-2');
+    const grid = css('--grid');
+    const units = [...new Set(shown.map((s) => s.unit))];
+    const width = Math.max(280, lanesEl.clientWidth);
+    lane.plot = new uPlot(
+      {
+        width,
+        height: isLast ? 170 : 140,
+        legend: { show: false },
+        padding: [8, (maxRightAxes() - Math.max(0, units.length - 1)) * AXIS_W + 8, 0, units.length ? 0 : AXIS_W],
+        cursor: { sync: { key: 'ika-lanes' }, drag: { x: false, y: false }, points: { size: 6 } },
+        scales: {
+          ...Object.fromEntries(units.map((u) => [u, { range: (_u: uPlot, min: number, max: number) => minSpan(min, max, MIN_SPAN[u] ?? 1) }])),
+          x: {
+            time: true,
+            range: () => {
+              const now = Date.now() / 1000;
+              return [now - state.rangeMin * 60, now];
+            },
+          },
+        },
+        series: [
+          {},
+          ...shown.map((s) => ({
+            label: s.short,
+            scale: s.unit,
+            stroke: s.color,
+            width: s.setpoint ? 1.5 : 2,
+            dash: s.setpoint ? [6, 4] : undefined,
+            points: { show: false },
+          })),
+        ],
+        axes: [
+          {
+            stroke: ink,
+            grid: { stroke: grid, width: 1 },
+            ticks: { stroke: grid },
+            space: 90,
+            size: isLast ? 36 : 6,
+            values: (_u, splits) => (isLast ? splits.map((v) => new Date(v * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : splits.map(() => '')),
+          },
+          ...units.map((u, i) => ({
+            scale: u,
+            side: i === 0 ? 3 : 1,
+            stroke: ink,
+            grid: { show: i === 0, stroke: grid, width: 1 },
+            ticks: { stroke: grid },
+            size: AXIS_W,
+            values: (_u: uPlot, splits: number[]) => splits.map((v) => `${+v.toFixed(2)} ${u}`),
+          })),
+        ],
+      },
+      data(shown),
+      lane.plotHost,
+    );
+  }
+
+  function rebuild() {
+    for (const l of lanes) l.plot?.destroy();
+    renderRangeBar();
+    renderLaneBar();
+    const shownDevs = app.devices.filter((d) => !state.hiddenLanes.includes(d.id));
+    if (!app.devices.length) {
+      lanes = [];
+      lanesEl.replaceChildren(h('p', { class: 'empty' }, 'Add a device to see live values here.'));
+      return;
+    }
+    if (!shownDevs.length) {
+      lanes = [];
+      lanesEl.replaceChildren(h('p', { class: 'empty' }, 'All lanes are hidden. Turn one on above.'));
+      return;
+    }
+    lanes = shownDevs.map((dev) => {
+      const series = laneSeries(dev);
+      const chips = new Map<string, HTMLElement>();
+      const chipEls = series.map((s) => {
+        const val = h('span', { class: 'chip-val' }, '—');
+        chips.set(s.key, val);
+        const b = h(
+          'button',
+          {
+            class: `ch-chip${s.setpoint ? ' sp' : ''}`,
+            style: `--c:${s.color}`,
+            'aria-pressed': String(visible(s)),
+            title: `Show or hide ${s.short.toLowerCase()}`,
+            onclick: () => {
+              state.visible[s.key] = !visible(s);
+              save();
+              b.setAttribute('aria-pressed', String(visible(s)));
+              lanes.forEach((l, i) => buildPlot(l, i === lanes.length - 1));
+            },
+          },
+          h('span', { class: 'swatch' }),
+          h('span', {}, s.short),
+          val,
+        );
+        return b;
+      });
+      const plotHost = h('div', { class: 'lane-plot' });
+      const el = h(
+        'div',
+        { class: 'lane', style: `--dev:${dev.color}` },
+        h('div', { class: 'lane-head' }, h('span', { class: 'lane-name' }, h('span', { class: 'dot' }), dev.label), h('div', { class: 'lane-chips' }, ...chipEls)),
+        plotHost,
+      );
+      return { dev, series, shown: [], plotHost, chips, el } as Lane;
+    });
+    lanesEl.replaceChildren(...lanes.map((l) => l.el));
+    lanes.forEach((l, i) => buildPlot(l, i === lanes.length - 1));
+    updateChips();
+  }
+
+  function updateChips() {
+    const last = app.history[app.history.length - 1];
+    for (const l of lanes) {
+      for (const s of l.series) {
+        const v = last?.v[s.key];
+        l.chips.get(s.key)!.textContent = v === undefined ? '—' : `${fmt(v, decimalsFor(s.unit))} ${s.unit}`;
+      }
+    }
+  }
+
+  app.sampled.on(() => {
+    for (const l of lanes) {
+      if (l.plot) l.plot.setData(data(l.shown), true);
+    }
+    updateChips();
+  });
+
+  new ResizeObserver(() => {
+    const w = Math.max(280, lanesEl.clientWidth);
+    for (const l of lanes) l.plot?.setSize({ width: w, height: l.plot.height });
+  }).observe(lanesEl);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rebuild);
   rebuild();
   return { rebuild };
+}
+
+function loadState(): ChartState {
+  const fallback: ChartState = { rangeMin: 15, visible: {}, hiddenLanes: [] };
+  try {
+    const s = localStorage.getItem(STATE_KEY);
+    return s ? { ...fallback, ...(JSON.parse(s) as Partial<ChartState>) } : fallback;
+  } catch {
+    return fallback;
+  }
 }

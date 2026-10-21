@@ -6,10 +6,10 @@ A browser control page for IKA lab devices over Web Serial — currently the **E
 
 ## What works now
 
-- Add and remove devices on a control page at any time (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
+- Add, remove and drag-to-reorder devices (horizontal cards) on a control page at any time (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
 - One generic panel per device, built from its driver: live readouts, setpoints with device read-back confirmation, on/off switches, a plain status word.
 - **Stop all** sends the stop commands to every connected unit.
-- Live chart of the last 30 minutes, one colour per device.
+- Live chart at the top: one lane per device on a shared time axis, filters for time range (5 min–1 h), lanes and channels.
 - Recording with notes; download as CSV (samples: actual, setpoint read-back and switch state per channel; events: commands sent, errors, notes).
 - Bench terminal per device for sending raw NAMUR commands — use it to check the commands marked *verify* in the design.
 - Per-setpoint user limits; confirmation before turning a heater on or raising temperature by more than 50 °C.

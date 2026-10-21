@@ -52,7 +52,7 @@ export interface Run {
 }
 
 const CONFIG_KEY = 'ika-control.page';
-const HISTORY_MS = 30 * 60 * 1000;
+const HISTORY_MS = 60 * 60 * 1000;
 
 /** App state: devices on the page, a 1 s sampler for chart and recording, the event log. */
 export class App {
@@ -109,6 +109,18 @@ export class App {
 
   forgetMissing(id: string): void {
     this.missing = this.missing.filter((m) => m.id !== id);
+    this.save();
+    this.changed.emit();
+  }
+
+  /** Reorder: the card order on the page is also the lane order in the chart. */
+  moveDevice(dev: DeviceInstance, toIndex: number): void {
+    const from = this.devices.indexOf(dev);
+    if (from < 0) return;
+    const to = Math.max(0, Math.min(this.devices.length - 1, toIndex));
+    if (from === to) return;
+    this.devices.splice(from, 1);
+    this.devices.splice(to, 0, dev);
     this.save();
     this.changed.emit();
   }

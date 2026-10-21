@@ -33,7 +33,12 @@ document.getElementById('app')!.replaceChildren(
   ),
   serialSupported() ? '' :
     h('div', { class: 'banner' }, 'This browser has no Web Serial, so real units cannot connect here. Open this page in Chrome or Edge on a computer, or Chromium on the Raspberry Pi. Simulated devices still work.'),
-  h('main', {}, panels, h('section', { class: 'card chart-card' }, h('h2', {}, 'Live chart'), h('p', { class: 'hint' }, 'Last 30 minutes. Click a legend item to show or hide it; dashed lines marked "setpoint" are hidden at first.'), chartHost)),
+  h(
+    'main',
+    {},
+    h('section', { class: 'card chart-card' }, h('h2', {}, 'Live chart'), h('p', { class: 'hint' }, 'One lane per device on a shared time axis. Tap a channel to show or hide it; setpoints are dashed and hidden at first.'), chartHost),
+    h('section', { class: 'devices' }, h('div', { class: 'section-head' }, h('h2', {}, 'Devices'), h('span', { class: 'hint' }, 'Drag ⠿ to reorder; the chart lanes follow.')), panels),
+  ),
   h(
     'footer',
     { class: 'runbar' },
@@ -52,13 +57,17 @@ const views = new Map<DeviceInstance, ReturnType<typeof devicePanel>>();
 let lastIds = '';
 
 function renderPanels() {
-  const ids = app.devices.map((d) => d.id).join('|') + '#' + app.missing.map((m) => m.id).join('|');
+  const ids = app.devices.map((d) => `${d.id}:${d.label}`).join('|') + '#' + app.missing.map((m) => m.id).join('|');
   if (ids !== lastIds) {
     lastIds = ids;
     for (const dev of [...views.keys()]) if (!app.devices.includes(dev)) views.delete(dev);
     const els: Node[] = [];
     for (const dev of app.devices) {
-      if (!views.has(dev)) views.set(dev, devicePanel(app, dev, (d) => reconnectDevice(app, d)));
+      if (!views.has(dev)) {
+        const v = devicePanel(app, dev, (d) => reconnectDevice(app, d));
+        enableReorder(v.handle, v.el, dev);
+        views.set(dev, v);
+      }
       els.push(views.get(dev)!.el);
     }
     for (const m of app.missing) {
@@ -72,7 +81,7 @@ function renderPanels() {
         ),
       );
     }
-    els.push(h('button', { class: 'panel add-tile', onclick: () => openAddDevice(app) }, h('span', { class: 'plus' }, '+'), 'Add device'));
+    els.push(h('button', { class: 'add-tile', onclick: () => openAddDevice(app) }, h('span', { class: 'plus' }, '+'), 'Add device'));
     panels.replaceChildren(...els);
     chart.rebuild();
   }
@@ -82,6 +91,52 @@ function renderPanels() {
   );
   recBtn.textContent = app.run ? 'Stop recording' : 'Start recording';
   recBtn.classList.toggle('on', !!app.run);
+}
+
+/** Drag a card by its handle (mouse, touch or pen); arrow keys on the handle also move it. */
+function enableReorder(handle: HTMLElement, card: HTMLElement, dev: DeviceInstance) {
+  let targetIndex = -1;
+  const cards = () => [...panels.querySelectorAll<HTMLElement>('.panel[data-id]')];
+  const clearMarks = () => cards().forEach((c) => c.classList.remove('drop-before', 'drop-after'));
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    card.classList.add('dragging');
+    targetIndex = app.devices.indexOf(dev);
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!card.classList.contains('dragging')) return;
+    const others = cards().filter((c) => c !== card);
+    clearMarks();
+    let idx = others.findIndex((c) => {
+      const r = c.getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    });
+    if (idx === -1) {
+      idx = others.length;
+      others.at(-1)?.classList.add('drop-after');
+    } else {
+      others[idx].classList.add('drop-before');
+    }
+    targetIndex = idx;
+  });
+  const end = () => {
+    if (!card.classList.contains('dragging')) return;
+    card.classList.remove('dragging');
+    clearMarks();
+    if (targetIndex >= 0) app.moveDevice(dev, targetIndex);
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+  handle.addEventListener('keydown', (e) => {
+    const i = app.devices.indexOf(dev);
+    if (e.key === 'ArrowUp') app.moveDevice(dev, i - 1);
+    else if (e.key === 'ArrowDown') app.moveDevice(dev, i + 1);
+    else return;
+    e.preventDefault();
+    requestAnimationFrame(() => views.get(dev)?.handle.focus());
+  });
 }
 
 let raf = 0;

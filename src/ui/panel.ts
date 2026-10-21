@@ -4,7 +4,7 @@ import { decimalsFor, fmt, h, openDialog, toast } from './dom';
 import { openTerminal } from './terminal';
 
 /** One generic panel, drawn entirely from the device's driver description. */
-export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: DeviceInstance) => void): { el: HTMLElement; update: () => void } {
+export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: DeviceInstance) => void): { el: HTMLElement; update: () => void; handle: HTMLElement } {
   const d = dev.driver;
   const statusEl = h('span', { class: 'status' });
   const titleEl = h('span', { class: 'dev-label' }, dev.label);
@@ -20,6 +20,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     h(
       'div',
       { class: 'menu-items' },
+      h('button', { onclick: () => { menu.open = false; app.moveDevice(dev, app.devices.indexOf(dev) - 1); } }, 'Move up'),
+      h('button', { onclick: () => { menu.open = false; app.moveDevice(dev, app.devices.indexOf(dev) + 1); } }, 'Move down'),
       h('button', { onclick: () => rename() }, 'Rename'),
       h('button', { onclick: () => editLimits() }, 'Limits'),
       h('button', { onclick: () => openTerminal(app, dev) }, 'Bench terminal'),
@@ -90,13 +92,14 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
 
+  const handle = h('button', { class: 'handle', 'aria-label': `Drag to reorder ${dev.label}`, title: 'Drag to reorder' }, '⠿');
   const el = h(
     'section',
-    { class: 'panel', style: `--dev:${dev.color}` },
+    { class: 'panel', style: `--dev:${dev.color}`, 'data-id': dev.id },
     h(
       'header',
       {},
-      h('span', { class: 'dot' }),
+      handle,
       h('div', { class: 'dev-title' }, titleEl, h('span', { class: 'dev-model' }, `${d.displayName}${dev.transport.kind === 'sim' ? ' · simulated' : ''}`)),
       statusEl,
       menu,
@@ -180,5 +183,5 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   }
 
   update();
-  return { el, update };
+  return { el, update, handle };
 }
