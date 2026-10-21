@@ -1,0 +1,83 @@
+// Shared types. A driver DESCRIBES a device model; the shared core does the work.
+
+export interface ReadingSpec {
+  key: string;          // stable id, e.g. "speed"
+  label: string;        // shown in the UI
+  unit: string;         // "°C", "rpm", "Ncm"
+  cmd: string;          // NAMUR read command, e.g. "IN_PV_4"
+  chart?: boolean;      // plot on the live chart
+  primary?: boolean;    // shown large in the panel
+}
+
+export interface SetpointSpec {
+  key: string;          // e.g. "speed" or "temp"
+  label: string;
+  unit: string;
+  cmd: string;          // write command; value is appended after a space
+  readCmd?: string;     // read-back command, e.g. "IN_SP_4"
+  min: number;
+  max: number;
+  step: number;
+  decimals: number;
+  tolerance: number;    // read-back within this counts as "confirmed"
+  actualKey?: string;   // the reading this setpoint drives (for status and charts)
+}
+
+export interface SwitchSpec {
+  key: string;          // e.g. "motor", "heater"
+  label: string;
+  on: string;           // e.g. "START_4"
+  off: string;          // e.g. "STOP_4"
+  confirmOn?: string;   // ask before switching on (e.g. heater)
+}
+
+export type DeviceStatus = 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'No reply' | 'Disconnected' | 'Connecting';
+
+export interface DeviceSnapshot {
+  values: Record<string, number | undefined>;      // reading key -> value
+  setpoints: Record<string, number | undefined>;   // setpoint key -> value read back from device
+  switches: Record<string, boolean>;               // switch key -> last commanded state
+}
+
+export interface DeviceDriver {
+  model: string;                 // registry key, e.g. "eurostar60"
+  displayName: string;
+  kind: string;                  // short description, e.g. "Overhead stirrer"
+  serial: SerialOptions;
+  identify(nameReply: string): boolean;   // matches the IN_NAME reply
+  readings: ReadingSpec[];
+  setpoints: SetpointSpec[];
+  switches: SwitchSpec[];
+  stopCommands: string[];        // what Stop all sends
+  releaseCommand?: string;       // sent when the device is removed (hand back to local control)
+  watchdog?: { verified: boolean; arm(seconds: number): string };
+  status(s: DeviceSnapshot): DeviceStatus;
+  parse?(reply: string): number | undefined;
+}
+
+/** Something that carries NAMUR lines to a device: Web Serial or the simulator. */
+export interface Transport {
+  readonly kind: 'serial' | 'sim';
+  open(): Promise<void>;
+  close(): Promise<void>;
+  /** Send one command. If expectReply, resolves with the reply line. */
+  request(cmd: string, expectReply: boolean): Promise<string | null>;
+  onDisconnect?: () => void;
+  onLog?: (dir: 'tx' | 'rx' | 'info', text: string) => void;
+}
+
+export const NAMUR_SERIAL: SerialOptions = {
+  baudRate: 9600,
+  dataBits: 7,
+  parity: 'even',
+  stopBits: 1,
+  flowControl: 'none',
+};
+
+/** Default reply parser: first whitespace token that is a plain number ("25.3 1" -> 25.3). */
+export function parseNumber(reply: string): number | undefined {
+  for (const tok of reply.trim().split(/\s+/)) {
+    if (/^[-+]?\d+(\.\d+)?$/.test(tok)) return Number(tok);
+  }
+  return undefined;
+}
