@@ -11,7 +11,7 @@ export const retControlVisc: DeviceDriver = {
   kind: 'Hotplate stirrer',
   serial: NAMUR_SERIAL,
   lineEnd: '\r\n',
-  identify: (name) => /RET/i.test(name),
+  identify: (name) => /\bRET\b|IKARET/i.test(name),
   readings: [
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
     { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true },

@@ -9,7 +9,8 @@ export const eurostar60: DeviceDriver = {
   kind: 'Overhead stirrer',
   serial: NAMUR_SERIAL,
   lineEnd: ' \r \n', // manual: "blank CR LF" (hex 20 0D 20 0A)
-  identify: (name) => /EUROSTAR/i.test(name),
+  // Our unit answers IN_NAME with "IKA ES 60" (bench, 2026-10-21).
+  identify: (name) => /EUROSTAR|\bES ?(60|100)\b/i.test(name),
   readings: [
     { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true },
     { key: 'torque', label: 'Torque', unit: 'Ncm', cmd: 'IN_PV_5', chart: true },

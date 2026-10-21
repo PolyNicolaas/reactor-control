@@ -23,7 +23,7 @@
 
 | Command | Function (manual) | Used by app | Status |
 | --- | --- | --- | --- |
-| `IN_NAME` | Read device name | Identify on connect | manual |
+| `IN_NAME` | Read device name | Identify on connect | bench ✓ 2026-10-21: replies `IKA ES 60` |
 | `IN_PV_3` | Read PT1000 value | Probe reading | manual |
 | `IN_PV_4` | Read current speed | Speed reading | manual |
 | `IN_PV_5` | Read current torque | Torque reading | manual |
@@ -53,3 +53,5 @@ No watchdog command is listed for this model, so a crashed browser does not stop
 ## Bench log
 
 _Add dated entries: date, firmware (`IN_SOFTWARE` reply), command, exact reply, conclusion._
+
+- **2026-10-21** — First connection from a laptop over USB (Add device, Auto-detect). `IN_NAME` → `IKA ES 60`. The name does not contain "EUROSTAR", so the driver now also matches `ES 60` / `ES 100`.

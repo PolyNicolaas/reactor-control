@@ -49,7 +49,7 @@ export class SimTransport implements Transport {
 
   private handle(cmd: string): string | null {
     const [head, arg] = cmd.split(/\s+/);
-    if (head === 'IN_NAME') return this.model === 'eurostar60' ? 'EUROSTAR 60 control' : 'RET control-visc';
+    if (head === 'IN_NAME') return this.model === 'eurostar60' ? 'IKA ES 60' : 'RET control-visc';
     if (head === 'RESET') {
       this.on = {};
       return null;
