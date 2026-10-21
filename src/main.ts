@@ -27,7 +27,7 @@ document.getElementById('app')!.replaceChildren(
   h(
     'header',
     { class: 'topbar' },
-    h('div', { class: 'brand' }, h('strong', {}, 'IKA Control'), h('span', { class: 'sub' }, 'Web Serial control page')),
+    h('div', { class: 'brand' }, h('strong', {}, 'Reactor Control'), h('span', { class: 'sub' }, 'Lab device control over Web Serial')),
     chips,
     stopBtn,
   ),

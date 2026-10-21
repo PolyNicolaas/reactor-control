@@ -12,7 +12,7 @@ const RANGES = [
   { label: '30 min', min: 30 },
   { label: '1 h', min: 60 },
 ];
-const STATE_KEY = 'ika-control.chart';
+const STATE_KEY = 'reactor-control.chart';
 // Fixed axis widths + right padding keep every lane's plot area aligned on the shared time axis.
 const AXIS_W = 72;
 // Smallest y span per unit, so sensor noise is not blown up to fill the lane.
@@ -158,7 +158,7 @@ export function liveChart(app: App, host: HTMLElement): { rebuild: () => void } 
         height: isLast ? 170 : 140,
         legend: { show: false },
         padding: [8, (maxRightAxes() - Math.max(0, units.length - 1)) * AXIS_W + 8, 0, units.length ? 0 : AXIS_W],
-        cursor: { sync: { key: 'ika-lanes' }, drag: { x: false, y: false }, points: { size: 6 } },
+        cursor: { sync: { key: 'reactor-lanes' }, drag: { x: false, y: false }, points: { size: 6 } },
         scales: {
           ...Object.fromEntries(units.map((u) => [u, { range: (_u: uPlot, min: number, max: number) => minSpan(min, max, MIN_SPAN[u] ?? 1) }])),
           x: {

@@ -51,7 +51,7 @@ export interface Run {
   devices: { id: string; label: string; model: string; nameReply: string }[];
 }
 
-const CONFIG_KEY = 'ika-control.page';
+const CONFIG_KEY = 'reactor-control.page';
 const HISTORY_MS = 60 * 60 * 1000;
 
 /** App state: devices on the page, a 1 s sampler for chart and recording, the event log. */

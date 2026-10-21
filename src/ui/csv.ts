@@ -28,5 +28,5 @@ export function eventsCsv(run: Run): string {
 export function runFileStem(run: Run): string {
   const d = new Date(run.startedAt);
   const p = (n: number) => String(n).padStart(2, '0');
-  return `ika-run_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  return `reactor-run_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }

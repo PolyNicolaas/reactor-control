@@ -1,8 +1,8 @@
-# IKA Control
+# Reactor Control
 
-A browser control page for IKA lab devices over Web Serial — currently the **EUROSTAR 60 control** overhead stirrer and the **RET control-visc** hotplate stirrer. It is a static site hosted on GitHub Pages; no server is needed.
+A browser control page for lab reactor devices over Web Serial. Supported now: the IKA **EUROSTAR 60 control** overhead stirrer and the IKA **RET control-visc** hotplate stirrer; other devices plug in as drivers. It is a static site hosted on GitHub Pages; no server is needed.
 
-**Live app:** https://polynicolaas.github.io/ika-control/
+**Live app:** https://polynicolaas.github.io/reactor-control/
 
 ## What works now
 
@@ -26,7 +26,7 @@ Serial settings used: 9600 baud, 7 data bits, even parity, 1 stop bit, no flow c
 ## Raspberry Pi kiosk
 
 ```bash
-chromium-browser --kiosk https://polynicolaas.github.io/ika-control/
+chromium-browser --kiosk https://polynicolaas.github.io/reactor-control/
 ```
 
 The first time, each unit needs one click in the port picker (Add device). After that the page reconnects to allowed ports on its own.
