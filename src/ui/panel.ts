@@ -29,6 +29,12 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     ),
   );
 
+  // Close the menu after any choice, and when clicking anywhere else.
+  menu.querySelector('.menu-items')!.addEventListener('click', () => (menu.open = false));
+  document.addEventListener('click', (e) => {
+    if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
+  });
+
   const tiles = h(
     'div',
     { class: 'tiles' },

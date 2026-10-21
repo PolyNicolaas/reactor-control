@@ -131,7 +131,7 @@ main { padding: 20px; display: grid; gap: 20px; }
 .menu summary::-webkit-details-marker { display: none; }
 .menu summary:hover { background: var(--tint); }
 .menu-items {
-  position: absolute; right: 0; top: calc(var(--tap) + 4px); z-index: 5;
+  position: absolute; right: 0; top: calc(var(--tap) + 4px); z-index: 30;
   display: grid; min-width: 200px; padding: 6px;
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.15);

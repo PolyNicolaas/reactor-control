@@ -3,6 +3,7 @@ import { Emitter } from './emitter';
 import { SerialTransport } from './serialTransport';
 import { getDriver } from '../devices/registry';
 import { SimTransport } from '../devices/simulator';
+import { probeName } from './probe';
 import type { SerialLink, Transport } from './types';
 
 export const DEVICE_COLORS = ['#2f7de1', '#e0742f', '#2fa66a', '#a64fd6', '#d23f6b', '#1f9fb0', '#b28a12', '#6d7a8a'];
@@ -196,13 +197,24 @@ export class App {
       if (s.sim) {
         transport = new SimTransport(s.model as 'eurostar60' | 'retControlVisc');
       } else {
-        const port = ports.find((p) => {
+        // Identical units share USB ids, so ask each candidate port for its name and only take
+        // the one this device's driver recognises (otherwise a saved "stirrer" could grab the hotplate).
+        const drv = getDriver(s.model);
+        const candidates = ports.filter((p) => {
           const i = p.getInfo();
           return !usedPorts.has(p) && i.usbVendorId === s.usbVendorId && i.usbProductId === s.usbProductId;
         });
-        if (port) {
-          usedPorts.add(port);
-          transport = new SerialTransport(port, s.link?.options ?? getDriver(s.model).serial, s.link?.lineEnd ?? getDriver(s.model).lineEnd);
+        for (const port of candidates) {
+          try {
+            const r = await probeName(port, undefined, s.link);
+            if (!drv.identify(r.name)) continue;
+            usedPorts.add(port);
+            s.link = r.link;
+            transport = new SerialTransport(port, r.link.options, r.link.lineEnd);
+            break;
+          } catch {
+            /* no reply on this port: try the next */
+          }
         }
       }
       if (transport) {
