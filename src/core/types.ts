@@ -57,6 +57,12 @@ export interface DeviceDriver {
   parse?(reply: string): number | undefined;
 }
 
+/** Serial settings that actually work for one unit (may differ from the driver default). */
+export interface SerialLink {
+  options: SerialOptions;
+  lineEnd: string;
+}
+
 /** Something that carries NAMUR lines to a device: Web Serial or the simulator. */
 export interface Transport {
   readonly kind: 'serial' | 'sim';

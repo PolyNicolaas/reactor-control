@@ -1,29 +1,55 @@
 import type { App, SavedDevice } from '../core/app';
 import type { DeviceInstance } from '../core/device';
 import { SerialTransport, describePort, serialSupported } from '../core/serialTransport';
-import { NAMUR_SERIAL } from '../core/types';
+import { NAMUR_SERIAL, type SerialLink } from '../core/types';
 import { detectDriver, drivers, getDriver } from '../devices/registry';
 import { SimTransport } from '../devices/simulator';
 import { h, openDialog, toast } from './dom';
 
+// Settings tried in order when asking a unit for its name. NAMUR (9600 7E1) first, as both
+// manuals specify; 8N1 covers USB virtual COM ports that ignore the requested framing.
+const PROBES: { label: string; link: SerialLink }[] = [
+  { label: '9600 7E1, CR LF', link: { options: NAMUR_SERIAL, lineEnd: '\r\n' } },
+  { label: '9600 7E1, blank CR LF', link: { options: NAMUR_SERIAL, lineEnd: ' \r \n' } },
+  { label: '9600 8N1, CR LF', link: { options: { ...NAMUR_SERIAL, dataBits: 8, parity: 'none' }, lineEnd: '\r\n' } },
+  { label: '9600 8N1, blank CR LF', link: { options: { ...NAMUR_SERIAL, dataBits: 8, parity: 'none' }, lineEnd: ' \r \n' } },
+];
+
+const readable = (s: string) => /^[\x20-\x7e]+$/.test(s) && /[A-Za-z]/.test(s);
+
+interface ProbeResult {
+  name: string;
+  link: SerialLink;
+  label: string;
+  attempts: string[]; // what each setting got back, for the error message
+}
+
 /**
- * Ask IN_NAME on a port and return the reply, then close it again.
- * Tries CR LF first (RET manual), then blank CR LF (EUROSTAR manual).
+ * Ask IN_NAME with each candidate setting. Stops at the first reply a driver recognises;
+ * otherwise returns the first readable reply (garbage from a wrong baud rate can look like text).
  */
-async function probeName(port: SerialPort): Promise<string> {
-  let last: unknown;
-  for (const end of ['\r\n', ' \r \n']) {
-    const t = new SerialTransport(port, NAMUR_SERIAL, end, 1500);
-    await t.open();
+async function probeName(port: SerialPort, onStep: (s: string) => void): Promise<ProbeResult> {
+  const attempts: string[] = [];
+  let fallback: ProbeResult | undefined;
+  for (const p of PROBES) {
+    onStep(`Asking the unit (${p.label})…`);
+    const t = new SerialTransport(port, p.link.options, p.link.lineEnd, 1200);
     try {
-      return (await t.request('IN_NAME', true)) ?? '';
+      await t.open();
+      const name = ((await t.request('IN_NAME', true)) ?? '').trim();
+      if (readable(name) && detectDriver(name)) return { name, link: p.link, label: p.label, attempts };
+      if (readable(name)) fallback ??= { name, link: p.link, label: p.label, attempts };
+      attempts.push(`${p.label}: "${name}" [${t.lastRawHex || 'no bytes'}]`);
     } catch (e) {
-      last = e;
+      attempts.push(`${p.label}: ${t.lastRawHex ? `garbled [${t.lastRawHex}]` : (e as Error).message}`);
     } finally {
       await t.close();
     }
   }
-  throw last;
+  if (fallback) return fallback;
+  const err = new Error('probe failed') as Error & { attempts: string[] };
+  err.attempts = attempts;
+  throw err;
 }
 
 export function openAddDevice(app: App): void {
@@ -37,10 +63,12 @@ export function openAddDevice(app: App): void {
     const label = h('input', { type: 'text', placeholder: 'e.g. Hotplate, Overhead stirrer' }) as HTMLInputElement;
     const useSim = h('input', { type: 'checkbox' }) as HTMLInputElement;
     if (!serialSupported()) useSim.checked = true;
+    const resetLabel = () => (go.textContent = useSim.checked ? 'Add simulated device' : 'Choose port and connect');
     const err = h('p', { class: 'error-text', role: 'alert' });
+    const details = h('details', { class: 'probe-details', hidden: true });
     const go = h('button', { class: 'primary', type: 'submit' }, 'Choose port and connect') as HTMLButtonElement;
-    useSim.addEventListener('change', () => (go.textContent = useSim.checked ? 'Add simulated device' : 'Choose port and connect'));
-    useSim.dispatchEvent(new Event('change'));
+    useSim.addEventListener('change', resetLabel);
+    resetLabel();
 
     const submit = async (e: Event) => {
       e.preventDefault();
@@ -55,15 +83,21 @@ export function openAddDevice(app: App): void {
         }
         // requestPort must run straight from the click.
         const port = await navigator.serial.requestPort();
+        const owner = app.portOwner(port);
+        if (owner) throw new Error(`That port is already used by "${owner.label}". Pick the other unit's port; both IKA units can look alike in the list.`);
         go.disabled = true;
-        go.textContent = 'Asking the unit…';
         let m = model.value;
-        let name = '';
+        let probe: ProbeResult;
         try {
-          name = await probeName(port);
+          probe = await probeName(port, (s) => (go.textContent = s));
         } catch (x) {
-          throw new Error(`No reply from ${describePort(port)}. Check the cable, that the unit is on, and try the other port. (${(x as Error).message})`);
+          const attempts = (x as { attempts?: string[] }).attempts ?? [(x as Error).message];
+          details.replaceChildren(h('summary', {}, 'What each setting got back'), h('pre', {}, attempts.join('\n')));
+          details.hidden = false;
+          throw new Error(`No readable reply from ${describePort(port)}. Check that this is the right port, the unit is switched on, and the cable is a data cable.`);
         }
+        const name = probe.name;
+        details.hidden = true;
         const found = detectDriver(name);
         if (m === 'auto') {
           if (!found) throw new Error(`The unit answered "${name}", which no driver recognises yet.`);
@@ -73,14 +107,19 @@ export function openAddDevice(app: App): void {
           if (!ok) throw new Error('Cancelled.');
         }
         const drv = getDriver(m);
-        await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: new SerialTransport(port, drv.serial, drv.lineEnd) });
-        toast(`${drv.displayName} connected`);
+        await app.addDevice({
+          model: m,
+          label: label.value.trim() || drv.kind,
+          transport: new SerialTransport(port, probe.link.options, probe.link.lineEnd),
+          link: probe.link,
+        });
+        toast(`${drv.displayName} connected (${probe.label})`);
         close(true);
       } catch (x) {
         const msg = (x as Error).message;
         if ((x as Error).name !== 'NotFoundError') err.textContent = msg; // NotFoundError = picker cancelled
         go.disabled = false;
-        useSim.dispatchEvent(new Event('change'));
+        resetLabel();
       }
     };
 
@@ -92,6 +131,7 @@ export function openAddDevice(app: App): void {
       h('label', { class: 'check' }, useSim, ' Simulated device (no hardware)'),
       !serialSupported() && h('p', { class: 'hint' }, 'This browser has no Web Serial. Use Chrome or Edge on a computer, or Chromium on the Raspberry Pi, to connect real units.'),
       err,
+      details,
       h('div', { class: 'actions' }, go),
     );
   });
@@ -105,7 +145,9 @@ export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<vo
       return;
     }
     const port = await navigator.serial.requestPort({ filters: portFilter(dev.transport instanceof SerialTransport ? dev.transport.port.getInfo() : {}) });
-    await dev.replaceTransport(new SerialTransport(port, dev.driver.serial, dev.driver.lineEnd));
+    const owner = app.portOwner(port);
+    if (owner && owner !== dev) throw new Error(`That port is already used by "${owner.label}".`);
+    await dev.replaceTransport(new SerialTransport(port, dev.link?.options ?? dev.driver.serial, dev.link?.lineEnd ?? dev.driver.lineEnd));
     app.save();
     toast(`${dev.label} reconnected`);
   } catch (e) {
@@ -116,8 +158,11 @@ export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<vo
 export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
   try {
     const port = await navigator.serial.requestPort({ filters: portFilter(s) });
+    const owner = app.portOwner(port);
+    if (owner) throw new Error(`That port is already used by "${owner.label}".`);
     app.forgetMissing(s.id);
-    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, transport: new SerialTransport(port, getDriver(s.model).serial, getDriver(s.model).lineEnd) });
+    const drv = getDriver(s.model);
+    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, link: s.link, transport: new SerialTransport(port, s.link?.options ?? drv.serial, s.link?.lineEnd ?? drv.lineEnd) });
   } catch (e) {
     if ((e as Error).name !== 'NotFoundError') toast((e as Error).message, 'error');
   }

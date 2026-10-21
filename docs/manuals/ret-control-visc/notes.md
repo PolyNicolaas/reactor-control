@@ -66,3 +66,5 @@ The related RET control manual also lists on-device ramp commands (`RMP_*`) and 
 ## Bench log
 
 _Add dated entries: date, firmware (`IN_SOFTWARE` reply), command, exact reply, conclusion._
+
+- **2026-10-21** — First connection from a laptop over USB at 9600 7E1. `IN_NAME` came back as 7 unreadable characters (bytes outside ASCII). Likely causes: the parity bit leaking into bit 7 through the USB virtual COM port, or the USB side not using 7E1. The app now drops bit 7 of every received byte (NAMUR is 7-bit ASCII) and, if needed, also tries 8N1; the working setting is saved per unit. **Next:** reconnect and record which setting the app reports and the raw hex shown in the bench terminal.

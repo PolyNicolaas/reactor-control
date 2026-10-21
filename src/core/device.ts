@@ -1,6 +1,6 @@
 import { Emitter } from './emitter';
 import { sleep } from './serialTransport';
-import { parseNumber, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
+import { parseNumber, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
 
 export interface DeviceEvent {
   t: number;              // epoch ms
@@ -28,6 +28,8 @@ export class DeviceInstance {
   responding = true;
   nameReply = '';
   limits: UserLimits = {};
+  /** Serial settings found when connecting, if they differ from the driver's defaults. */
+  link?: SerialLink;
 
   private polling = false;
   private failures = 0;

@@ -247,6 +247,8 @@ main { padding: 20px; display: grid; gap: 20px; }
 .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .error-text { color: var(--bad); margin: 0; min-height: 1em; }
 .error-text:empty { display: none; }
+.probe-details summary { cursor: pointer; font-size: 14px; }
+.probe-details pre { margin: 8px 0 0; padding: 10px; border-radius: 10px; background: var(--tint); font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick button { min-height: 36px; padding: 0 10px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 .term-out { height: 240px; overflow: auto; margin: 0; padding: 10px; border-radius: 10px; background: var(--tint); font-size: 13px; }

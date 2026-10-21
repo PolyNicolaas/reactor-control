@@ -3,7 +3,7 @@ import { Emitter } from './emitter';
 import { SerialTransport } from './serialTransport';
 import { getDriver } from '../devices/registry';
 import { SimTransport } from '../devices/simulator';
-import type { Transport } from './types';
+import type { SerialLink, Transport } from './types';
 
 export const DEVICE_COLORS = ['#2f7de1', '#e0742f', '#2fa66a', '#a64fd6', '#d23f6b', '#1f9fb0', '#b28a12', '#6d7a8a'];
 
@@ -16,6 +16,7 @@ export interface SavedDevice {
   usbVendorId?: number;
   usbProductId?: number;
   limits?: Record<string, number | undefined>;
+  link?: SerialLink;
 }
 
 export interface PageConfig {
@@ -84,10 +85,11 @@ export class App {
   }
 
   /** Create a device instance, connect it and add it to the page. */
-  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits'] }): Promise<DeviceInstance> {
+  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink }): Promise<DeviceInstance> {
     const driver = getDriver(opts.model);
     const dev = new DeviceInstance(opts.id ?? this.newId(driver.model), driver, opts.label, opts.color ?? this.nextColor(), opts.transport);
     if (opts.limits) dev.limits = { ...opts.limits };
+    dev.link = opts.link;
     dev.changed.on(() => this.changed.emit());
     dev.events.on((e) => {
       // Keep writes, errors and info; skip the once-a-second poll traffic (IN_* and replies).
@@ -132,6 +134,11 @@ export class App {
     this.changed.emit();
   }
 
+  /** The device already using this port, if any (picking it again would cut that device off). */
+  portOwner(port: SerialPort): DeviceInstance | undefined {
+    return this.devices.find((d) => d.connected && d.transport instanceof SerialTransport && d.transport.port === port);
+  }
+
   async stopAll(): Promise<void> {
     await Promise.all(this.devices.filter((d) => d.connected).map((d) => d.stopAll()));
     this.note('Stop all pressed');
@@ -151,6 +158,7 @@ export class App {
         usbVendorId: info.usbVendorId,
         usbProductId: info.usbProductId,
         limits: d.limits,
+        link: d.link,
       };
     });
     this.config.devices.push(...this.missing);
@@ -194,12 +202,12 @@ export class App {
         });
         if (port) {
           usedPorts.add(port);
-          transport = new SerialTransport(port, getDriver(s.model).serial, getDriver(s.model).lineEnd);
+          transport = new SerialTransport(port, s.link?.options ?? getDriver(s.model).serial, s.link?.lineEnd ?? getDriver(s.model).lineEnd);
         }
       }
       if (transport) {
         this.missing = this.missing.filter((m) => m.id !== s.id);
-        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits });
+        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link });
       } else {
         missing.push(s);
       }

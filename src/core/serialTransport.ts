@@ -12,7 +12,10 @@ export class SerialTransport implements Transport {
   onDisconnect?: () => void;
   onLog?: (dir: 'tx' | 'rx' | 'info', text: string) => void;
 
+  /** Raw bytes of the last received line, as hex — for diagnosing garbled replies. */
+  lastRawHex = '';
   private reader?: ReadableStreamDefaultReader<string>;
+  private raw: number[] = [];
   private readLoopDone?: Promise<void>;
   private pipeDone?: Promise<void>;
   private buffer = '';
@@ -32,8 +35,19 @@ export class SerialTransport implements Transport {
     // A port remembered from a previous session may already be open in this tab.
     if (!this.port.readable) await this.port.open(this.options);
     this.closing = false;
-    const decoder = new TextDecoderStream();
-    this.pipeDone = this.port.readable!.pipeTo(decoder.writable as WritableStream<Uint8Array>).catch(() => {});
+    // NAMUR is 7-bit ASCII. Decode byte by byte and drop the 8th bit, so a parity bit that leaks
+    // through a USB virtual COM port cannot garble the text. Raw bytes are kept for diagnostics.
+    const decoder = new TransformStream<Uint8Array, string>({
+      transform: (chunk, ctl) => {
+        let s = '';
+        for (const b of chunk) {
+          this.raw.push(b);
+          s += String.fromCharCode(b & 0x7f);
+        }
+        ctl.enqueue(s);
+      },
+    });
+    this.pipeDone = this.port.readable!.pipeTo(decoder.writable).catch(() => {});
     this.reader = decoder.readable.getReader();
     this.readLoopDone = this.readLoop();
   }
@@ -48,6 +62,8 @@ export class SerialTransport implements Transport {
         while ((idx = this.buffer.search(/\r?\n/)) >= 0) {
           const line = this.buffer.slice(0, idx).trim();
           this.buffer = this.buffer.slice(this.buffer[idx] === '\r' ? idx + 2 : idx + 1);
+          this.lastRawHex = this.raw.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+          this.raw = [];
           if (!line) continue;
           this.onLog?.('rx', line);
           if (this.waiting) {

@@ -1,5 +1,6 @@
 import type { App } from '../core/app';
 import type { DeviceInstance } from '../core/device';
+import { SerialTransport } from '../core/serialTransport';
 import { h, openDialog } from './dom';
 
 // Commands worth checking on each unit before trusting them in a driver.
@@ -20,7 +21,8 @@ export function openTerminal(app: App, dev: DeviceInstance): void {
       line('tx', `> ${cmd}`);
       try {
         const r = await dev.raw(cmd);
-        line('rx', r === null ? '(sent, no reply expected)' : `< ${r}`);
+        const hex = dev.transport instanceof SerialTransport ? dev.transport.lastRawHex : '';
+        line('rx', r === null ? '(sent, no reply expected)' : `< ${r}${hex ? `   [${hex}]` : ''}`);
       } catch (e) {
         line('err', `! ${(e as Error).message}`);
       }
@@ -37,7 +39,7 @@ export function openTerminal(app: App, dev: DeviceInstance): void {
     return h(
       'div',
       { class: 'terminal' },
-      h('p', { class: 'hint' }, 'Commands go through the same queue as polling. Commands starting with IN_ wait for a reply; others are sent without one. Use this to check the commands marked "verify" in the design.'),
+      h('p', { class: 'hint' }, 'Commands go through the same queue as polling. Commands starting with IN_ wait for a reply; others are sent without one. Replies show the text and the raw bytes in hex. Use this to check the commands marked "verify" in the manual notes.'),
       quick,
       out,
       form,
