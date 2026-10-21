@@ -22,7 +22,7 @@ export class SimTransport implements Transport {
       this.pv = { 3: 22, 4: 0, 5: 2 };
       this.sp = { 4: 300 };
     } else {
-      this.pv = { 1: 22, 2: 22, 3: 380, 4: 0 };
+      this.pv = { 1: 22, 2: 22, 3: 380, 4: 0, 5: 0 };
       this.sp = { 1: 50, 4: 400 };
     }
   }
@@ -101,6 +101,8 @@ export class SimTransport implements Transport {
       const next = approach(plate, plateTarget, plateTarget > plate ? 40 : 300);
       this.pv[2] = plateTarget > plate ? Math.min(next, plate + dt * 0.25) : next;
       this.pv[1] = approach(probe, this.pv[2], 60) + noise(0.1);
+      if (this.on[4]) this.viscosity = Math.min(this.viscosity + dt * 0.001, 2);
+      this.pv[5] = this.on[4] ? (this.viscosity - 1) * 100 + noise(1) : 0;
     }
   }
 }

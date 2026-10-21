@@ -1,20 +1,22 @@
 import { NAMUR_SERIAL, type DeviceDriver } from '../core/types';
 
 // IKA RET control-visc — hotplate stirrer (0–340 °C plate, external PT100 probe).
-// Viscosity trend, pH and weight (IN_PV_5 / IN_PV_80 / IN_PV_90) are left out until
-// they are checked on the bench terminal; add them here once verified.
-// Note: turn OFF the "Eurostar" option in the device's system settings, otherwise the
-// heater switches off when the serial cable is unplugged.
+// Source: operating instructions 20000004159, p. 31–33 (see docs/manuals/ret-control-visc/notes.md).
+// pH (IN_PV_80) and weight (IN_PV_90) are not polled; they need the pH electrode / weighing in use.
+// Keep the device's "Eurostar control" setting OFF (manual p. 26): with it on, the RET itself
+// talks to a EUROSTAR and stops heating when that link drops.
 export const retControlVisc: DeviceDriver = {
   model: 'retControlVisc',
   displayName: 'RET control-visc',
   kind: 'Hotplate stirrer',
   serial: NAMUR_SERIAL,
+  lineEnd: '\r\n',
   identify: (name) => /RET/i.test(name),
   readings: [
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
     { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true },
     { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true },
+    { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true },
     { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3' },
   ],
   setpoints: [
@@ -33,7 +35,7 @@ export const retControlVisc: DeviceDriver = {
   ],
   stopCommands: ['STOP_1', 'STOP_4'],
   releaseCommand: 'RESET',
-  // Unverified on this model: enable only after testing on the bench.
+  // Documented in the manual (p. 31); not used by the app until tried on the bench.
   watchdog: { verified: false, arm: (s) => `OUT_WD1@${s}` },
   status: (s) => {
     if (s.switches.heater) {

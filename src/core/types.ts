@@ -44,6 +44,8 @@ export interface DeviceDriver {
   displayName: string;
   kind: string;                  // short description, e.g. "Overhead stirrer"
   serial: SerialOptions;
+  /** Line terminator for commands, as the manual specifies (default CR LF). */
+  lineEnd?: string;
   identify(nameReply: string): boolean;   // matches the IN_NAME reply
   readings: ReadingSpec[];
   setpoints: SetpointSpec[];

@@ -6,15 +6,24 @@ import { detectDriver, drivers, getDriver } from '../devices/registry';
 import { SimTransport } from '../devices/simulator';
 import { h, openDialog, toast } from './dom';
 
-/** Ask IN_NAME on a port and return the reply, then close it again. */
+/**
+ * Ask IN_NAME on a port and return the reply, then close it again.
+ * Tries CR LF first (RET manual), then blank CR LF (EUROSTAR manual).
+ */
 async function probeName(port: SerialPort): Promise<string> {
-  const t = new SerialTransport(port, NAMUR_SERIAL, 1500);
-  await t.open();
-  try {
-    return (await t.request('IN_NAME', true)) ?? '';
-  } finally {
-    await t.close();
+  let last: unknown;
+  for (const end of ['\r\n', ' \r \n']) {
+    const t = new SerialTransport(port, NAMUR_SERIAL, end, 1500);
+    await t.open();
+    try {
+      return (await t.request('IN_NAME', true)) ?? '';
+    } catch (e) {
+      last = e;
+    } finally {
+      await t.close();
+    }
   }
+  throw last;
 }
 
 export function openAddDevice(app: App): void {
@@ -64,7 +73,7 @@ export function openAddDevice(app: App): void {
           if (!ok) throw new Error('Cancelled.');
         }
         const drv = getDriver(m);
-        await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: new SerialTransport(port, drv.serial) });
+        await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: new SerialTransport(port, drv.serial, drv.lineEnd) });
         toast(`${drv.displayName} connected`);
         close(true);
       } catch (x) {
@@ -96,7 +105,7 @@ export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<vo
       return;
     }
     const port = await navigator.serial.requestPort({ filters: portFilter(dev.transport instanceof SerialTransport ? dev.transport.port.getInfo() : {}) });
-    await dev.replaceTransport(new SerialTransport(port, dev.driver.serial));
+    await dev.replaceTransport(new SerialTransport(port, dev.driver.serial, dev.driver.lineEnd));
     app.save();
     toast(`${dev.label} reconnected`);
   } catch (e) {
@@ -108,7 +117,7 @@ export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
   try {
     const port = await navigator.serial.requestPort({ filters: portFilter(s) });
     app.forgetMissing(s.id);
-    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, transport: new SerialTransport(port, getDriver(s.model).serial) });
+    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, transport: new SerialTransport(port, getDriver(s.model).serial, getDriver(s.model).lineEnd) });
   } catch (e) {
     if ((e as Error).name !== 'NotFoundError') toast((e as Error).message, 'error');
   }

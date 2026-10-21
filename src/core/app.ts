@@ -194,7 +194,7 @@ export class App {
         });
         if (port) {
           usedPorts.add(port);
-          transport = new SerialTransport(port, getDriver(s.model).serial);
+          transport = new SerialTransport(port, getDriver(s.model).serial, getDriver(s.model).lineEnd);
         }
       }
       if (transport) {

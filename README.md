@@ -31,10 +31,15 @@ chromium-browser --kiosk https://polynicolaas.github.io/ika-control/
 
 The first time, each unit needs one click in the port picker (Add device). After that the page reconnects to allowed ports on its own.
 
+## Device manuals
+
+`docs/manuals/` has one folder per device with the manual and a `notes.md` of annotations: key facts with page numbers, the command table with a verification status, open questions and a bench log. The PDFs are not committed (copyrighted; this repo is public) — run `./scripts/get-manuals.sh` to download them. See [docs/manuals/README.md](docs/manuals/README.md).
+
 ## Adding a device model
 
-1. Copy `src/devices/eurostar60.ts` to a new file and fill in the readings, setpoints, switches and stop commands from the device manual.
-2. Add it to `src/devices/registry.ts`.
+1. Add a folder under `docs/manuals/` from `_template/` with the manual and notes.
+2. Copy `src/devices/eurostar60.ts` to a new file and fill in the readings, setpoints, switches and stop commands from the device manual.
+3. Add it to `src/devices/registry.ts`.
 
 The panel, polling, chart, Stop all and recording pick it up automatically.
 

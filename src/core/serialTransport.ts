@@ -23,6 +23,7 @@ export class SerialTransport implements Transport {
   constructor(
     readonly port: SerialPort,
     private options: SerialOptions,
+    private lineEnd = '\r\n',
     private timeoutMs = 1000,
     private settleMs = 120,
   ) {}
@@ -93,7 +94,7 @@ export class SerialTransport implements Transport {
     const writer = writable.getWriter();
     try {
       this.onLog?.('tx', cmd);
-      await writer.write(new TextEncoder().encode(cmd + '\r\n'));
+      await writer.write(new TextEncoder().encode(cmd + this.lineEnd));
     } finally {
       writer.releaseLock();
     }
