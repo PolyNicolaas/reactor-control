@@ -90,6 +90,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D17 | 2026-10-22 | ELN will be electronic; product not chosen. **ELN integration is deferred** — design hooks now, implement later. Likely orchestrator: **Luma Lab Connect** | Decide ELN first |
 | D18 | 2026-10-22 | Add a camera to the Pi setup | Visual record of the reaction alongside the data |
 | D19 | 2026-10-22 | This design document is living and is updated with every code change; decisions and improvement ideas are tracked here | Keep the design true to the code |
+| D20 | 2026-10-22 | **Planned direction:** host the app on department hardware inside NU's network, with a small server of our own (§12). **Needs to be defined and implemented.** GitHub Pages stays the host until then | A server we control lets feedback become issues without a third-party relay, keeps reaction data and feedback inside NU, and enables server-side records, packages for Luma, and NU login |
+| D21 | 2026-10-22 | In-app feedback (bugs, ideas, comments) is filed as issues automatically through our own server, not a third-party relay. Issues must not be public | Cleaner and private; feedback can contain reaction and lab details |
 
 ## 6. Programs (draft)
 
@@ -148,17 +150,17 @@ Decided to add one (D18); model not chosen. Plan:
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
 2. **Package and outbox**: as-run program from setpoints, outbox folder writer, zip fallback.
 3. **Camera**: live tile, time-lapse, photos on events.
-4. **Feedback box** (if adopted, see §12).
+4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
 5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for programs; setup check with role matching.
 6. Program import (file, link, notebook helper), JSON Schema.
-7. ELN/Luma integration; login and operator identity.
-8. Safe-run watchdog on units that support it (RET `OUT_WD`), more devices.
+7. **Department server** (D20): define, set up HTTPS and hosting, feedback → private issues, then central records, packages for Luma, NU login.
+8. ELN/Luma integration.
+9. Safe-run watchdog on units that support it (RET `OUT_WD`), more devices.
 
 ## 11. Ideas and improvements
 
 Add ideas here with a date; move them to the roadmap when decided.
 
-- 2026-10-22 — Feedback/bug box at the bottom of the page (§12).
 - 2026-10-22 — Pump: per-channel calibration from the app (`xY`/`xV`), so "Dispensed" becomes trustworthy.
 - 2026-10-22 — Pump: set rotation direction per channel from programs, or check it like tubing.
 - 2026-10-22 — Pump: dose a set volume (pump's Volume mode) as a program step.
@@ -166,18 +168,46 @@ Add ideas here with a date; move them to the roadmap when decided.
 - 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a program.
 - 2026-10-22 — Barcode/QR on the notebook page for the reaction ID.
 
-## 12. Feedback box (proposal)
+## 12. Department server and feedback (planned — D20, D21; to be defined)
 
-A text box at the bottom of the page for comments, ideas and bugs **works**, with one catch: the app has no server, so a submission has to go somewhere that accepts it without a secret key in the public page. Options:
+**Status: direction agreed, design and implementation still to do.**
 
-| Option | Works offline | Needs | Notes |
-| --- | --- | --- | --- |
-| Save in browser storage, add to the reaction package, export as a list | Yes | Nothing | Never lost; but someone must collect them |
-| "Open as GitHub issue" button with the text and context pre-filled | No | A GitHub login in the browser | Lands directly in our issue list; awkward on a shared kiosk |
-| Post to a form service (e.g. Google Form → Sheet, Formspree) | No | A form set up once | Anyone can submit; no login |
-| Small relay (e.g. a Cloudflare Worker) that files GitHub issues | No | One small hosted script with a token | Best end state; no login for users |
+### Why a server
 
-Recommended start: always save locally (with app version, devices, reaction ID and the last log lines attached automatically), plus one send route. Decision pending.
+GitHub Pages only serves files: the app has nowhere private to keep a key or send data. A server on department hardware inside NU's network serves the app **and** receives what it sends back. The browser still runs on the Pi next to the equipment (Web Serial only reaches the USB ports of the computer the browser runs on); the server hosts the app and the data, not the device connections.
+
+### Feedback box
+
+- A box at the bottom of the page: type (bug, idea, comment), text, optional photo/screenshot.
+- Context attached automatically: app version, connected devices and status, reaction ID if running, last ~50 log lines, browser.
+- **Saved locally first** (browser storage) and sent to a configurable address (`/api/feedback` on the server); unsent items are queued and retried, and can be exported. Before a server exists the box works in local-only mode.
+- The server stores each item, then files it as an issue in a **private** tracker (private GitHub repo with the token held on the server, or an NU-run tracker) and returns the issue number, which the app shows.
+
+### What else the server enables (each to be decided separately)
+
+- Reaction records stored centrally, not only in one browser.
+- Reaction packages written to a server folder watched by a Luma Lab Connect agent (§8).
+- Login with NU credentials (single sign-on): a real operator on every change.
+- One deployment updates every Pi.
+
+### Requirements
+
+- HTTPS with a certificate trusted by the Pis' browsers (Web Serial needs a secure page); NU IT can likely issue one for an internal hostname.
+- IT approval to run the service on the network; outbound access to GitHub if issues go there.
+- A backup plan for the server's data.
+
+### Interim option
+
+The Pi can run the same small server for itself: pages served from `localhost` count as secure, so no certificate is needed, and the token stays on the Pi. Moving to the department server later is the same code on another machine.
+
+### To define
+
+- Hardware and hostname; who administers it (department IT or us).
+- Server stack (proposal: small Node service next to the static app, SQLite for storage).
+- Issue destination: private GitHub repo or an NU tracker.
+- Authentication: NU single sign-on or none at first.
+- Which data moves to the server first: feedback only, or reaction records and packages too.
+- Whether to start with the interim Pi-local server.
 
 ## 13. Known limitations
 
@@ -195,7 +225,7 @@ Recommended start: always save locally (with app version, devices, reaction ID a
 - Who confirms prompts — needs operator identity (login)?
 - Pump direction: set by programs or only checked?
 - Camera model and mounting position.
-- Feedback box: which send route?
+- Department server: hardware, hostname, administration, stack, issue destination, login (§12 "To define").
 
 ## Keeping this document current
 
