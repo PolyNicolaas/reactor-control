@@ -230,6 +230,6 @@ The Pi can run the same small server for itself: pages served from `localhost` c
 ## Keeping this document current
 
 - **Every commit that changes behaviour updates this file**: §3 if anything recorded or saved changes, §4 if the architecture changes, §5 for any new decision, §10–§14 as items move. Update "Last reviewed" at the top.
-- Decisions are never deleted; add a new one that supersedes the old (e.g. "D20 supersedes D8").
+- Decisions are never deleted; add a new one that says which it supersedes (e.g. "supersedes D8").
 - New ideas go in §11 with a date; problems found in use go in §13 or as GitHub issues.
 - The same rule is in [`CLAUDE.md`](../CLAUDE.md) for AI-assisted changes and in the pull request template.
