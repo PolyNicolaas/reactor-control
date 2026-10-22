@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22 (camera module).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22 (RET balance; units with a blank stored name).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -132,6 +132,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D26 | 2026-10-22 | **A dropped connection never stops the record or the reaction.** Each link (VNC, host, module USB, the Pi itself) fails safe as described in §4 "When a connection drops"; nothing recorded is lost, gaps are marked | Stations are ephemeral and networked; failures must be expected |
 | D27 | 2026-10-22 | Every driver has a simulator and tests; pushes to `main` run the tests before deploying | Changes to shared code must not silently break a device; the pump can be developed before it arrives |
 | D28 | 2026-10-22 | Camera module built on the browser camera API (not Web Serial): time-lapse by grabbing frames, clips by encoding once with WebCodecs into a rolling buffer and writing WebM; media kept in browser storage (IndexedDB) and downloaded with the recording until the host exists | Works with any UVC webcam in Chromium, no extra software on the Pi; one encoder keeps the Pi load low; IndexedDB keeps large files out of memory |
+| D29 | 2026-10-22 | **RET balance:** mass shown in whole grams; the app tares in software (net = gross − stored tare, all three recorded); mass is blank while heating or stirring and until the weighing key (G) is pressed and the reading settles; Tare only when settled | The RET has no remote tare or weighing start, weighs only with heating and stirring off, and reports whole grams (manual p. 25, 35; bench 2026-10-22) |
+| D30 | 2026-10-22 | A unit that answers with correct framing but a **blank stored name** (all 0xFF) is treated as a working unit: it connects when its model is picked in Add device; after a reload it is reattached to the port no other model claims | Our RET's stored name is erased (`IN_NAME` → `ff`×7, `IN_TYPE` → `1`); refusing it would block a working unit. `OUT_NAME IKARET` may restore the name (untested) |
 
 ## 6. Programs (draft)
 
@@ -314,6 +316,8 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
+- RET balance: mass needs the weighing key (G) pressed on the unit; the tare is the app's, not the RET's (its display shows gross).
+- Our RET has a blank stored name, so Auto-detect cannot identify it; pick the model in Add device (D30).
 
 ## 14. Open questions
 
@@ -328,6 +332,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - How long a station may run disconnected from the host, and how much local storage to allow for the queue.
 - Video retention on the host, storage size, and NU/department policy on recording in labs.
 - How each Pi gets its station name (kiosk URL parameter, or registered on the server).
+- Does `OUT_NAME IKARET` restore our RET's name permanently?
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
 ## Keeping this document current
