@@ -1,6 +1,6 @@
 # Reaction programs — design proposal
 
-Status: **draft for discussion** (2026-10-22). Nothing here is built yet. Example: [`examples/programs/dropwise-addition.reactor.json`](../examples/programs/dropwise-addition.reactor.json).
+Status: **draft for discussion** (2026-10-22). Nothing here is built yet. Priorities and decisions live in [DESIGN.md](DESIGN.md); per D10 the record of what happened comes first and programs are optional. Example: [`examples/programs/dropwise-addition.reactor.json`](../examples/programs/dropwise-addition.reactor.json).
 
 ## Goals
 

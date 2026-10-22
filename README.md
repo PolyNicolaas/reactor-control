@@ -4,6 +4,8 @@ A browser control page for lab reactor devices over Web Serial. Supported now: t
 
 **Live app:** https://polynicolaas.github.io/reactor-control/
 
+**Design, decisions and what is recorded:** [docs/DESIGN.md](docs/DESIGN.md) (living document — update it with every code change).
+
 ## What works now
 
 - Add, remove and drag-to-reorder devices (horizontal cards) on a control page at any time (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
@@ -68,6 +70,6 @@ Pushing to `main` builds and deploys to GitHub Pages via `.github/workflows/depl
 | `src/devices/*` | Drivers, registry, simulator |
 | `src/ui/*` | Panels, add device, chart, terminal, CSV export |
 
-## Not yet built (see the design doc)
+## Not yet built
 
-Reaction programs (lanes, ramps, gates — proposal in [docs/program-format.md](docs/program-format.md)), safe-run watchdog, IndexedDB run storage, program import from notebooks, login and synced runs.
+See the roadmap in [docs/DESIGN.md](docs/DESIGN.md#10-roadmap): reaction ID and always-on recording, Stop with Resume / Reaction complete, reaction packages for the ELN, camera, programs.
