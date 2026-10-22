@@ -121,6 +121,8 @@ export class App {
     dev.changed.on(() => this.saveSoon());
     if (opts.groupLabels) dev.groupLabels = { ...opts.groupLabels };
     dev.changed.on(() => this.changed.emit());
+    // Changes the unit shows by itself (stirring started, keypad setpoint change) count as changes.
+    dev.changes.on((text) => this.change(`${dev.label}: ${text}`));
     dev.events.on((e) => {
       // Keep writes, errors and info; skip the once-a-second poll traffic and all replies.
       if (e.kind === 'rx' || (e.kind === 'tx' && dev.isPollCommand(e.text))) return;
@@ -213,8 +215,10 @@ export class App {
       return;
     }
     const folder = { timelapse: 'timelapse', clip: 'clips', snapshot: 'snapshots' }[m.kind];
-    const elapsed = ((m.t - run.startedAt) / 1000).toFixed(1).padStart(8, '0');
-    const file = `${folder}/${cam.id}_+${elapsed}s.${m.ext}`;
+    // Time in the run; a clip can start before the run when a change started the recording.
+    const secs = (m.t - run.startedAt) / 1000;
+    const elapsed = `${secs < 0 ? '-' : '+'}${Math.abs(secs).toFixed(1).padStart(8, '0')}`;
+    const file = `${folder}/${cam.id}_${elapsed}s.${m.ext}`;
     try {
       await mediaStore.put(file, m.blob);
     } catch (e) {
@@ -411,13 +415,31 @@ export class App {
     return run;
   }
 
+  /**
+   * A change to the reactor: a setpoint or switch changed on a card, stirring started or stopped,
+   * a setpoint changed on the unit. Logged as a note, and every camera saves a clip around it.
+   * With a camera on the page and no recording running, the first change starts a recording,
+   * so the clip (and the data) are never lost (DESIGN D31).
+   */
+  change(text: string): void {
+    if (!this.run && this.cameras.some((c) => c.status === 'Live')) {
+      this.startRun();
+      this.note(`Recording started automatically by: ${text}`);
+      this.autoStarted.emit(text);
+    }
+    this.note(text);
+  }
+
+  /** Fired when a change started a recording on its own (UI shows it). */
+  readonly autoStarted = new Emitter<string>();
+
   note(text: string): void {
     const n = { t: Date.now(), text };
     this.run?.notes.push(n);
     this.logged.emit({ t: n.t, deviceId: '', kind: 'info', text: `Note: ${text}` });
     // Every change on the page arrives here as a note (setpoints, switches, Stop all, user notes):
     // each one gets a camera clip around it (DESIGN D25).
-    if (this.run && !/^Recording (started|stopped)$/.test(text)) for (const cam of this.cameras) cam.trigger(text);
+    if (this.run && !/^Recording (started|stopped)/.test(text)) for (const cam of this.cameras) cam.trigger(text);
   }
 
   get anyRunning(): boolean {

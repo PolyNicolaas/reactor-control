@@ -13,7 +13,7 @@ export const eurostar60: DeviceDriver = {
   // Our unit answers IN_NAME with "IKA ES 60" (bench, 2026-10-21).
   identify: (name) => /EUROSTAR|\bES ?(60|100)\b/i.test(name),
   readings: [
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, activity: { name: 'stirring', above: 20 } },
     { key: 'torque', label: 'Torque', unit: 'Ncm', cmd: 'IN_PV_5', chart: true },
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_3', chart: true },
   ],

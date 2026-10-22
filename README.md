@@ -32,7 +32,7 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
 - RET balance with software tare. Per-setpoint user limits; confirmation before heating or large temperature jumps.
-- **Cameras** (Add camera): live view, a 720p time-lapse frame every 10 s and a clip from 60 s before to 60 s after every change while recording; snapshots; focus/exposure lock where supported. Media downloads with the recording as one zip.
+- **Cameras** (Add camera): live view; a clip from 60 s before to 60 s after every change — setpoint or switch changes, stirring starting or stopping (also from the unit's own controls), setpoints changed on the unit — and the first change starts a recording by itself; a 720p time-lapse frame every 10 s while recording; snapshots; focus/exposure lock where supported. Media downloads with the recording as one zip.
 - Bench terminal per unit for raw commands (IKA NAMUR or Ismatec), with replies in text and hex.
 
 ## Requirements

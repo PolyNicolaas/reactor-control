@@ -16,7 +16,7 @@ export const retControlVisc: DeviceDriver = {
   readings: [
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
     { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true },
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, activity: { name: 'stirring', above: 20 } },
     { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true },
     { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3' },
     // Built-in balance: 10–5000 g, accuracy ±(0.3 % + 2 g) (manual p. 35). The device only weighs

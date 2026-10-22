@@ -126,7 +126,10 @@ export class CameraModule {
       this.video.srcObject = this.stream;
       await this.video.play().catch(() => {});
       this.status = this.recording ? 'Recording' : 'Live';
-      if (this.recording) this.startPipeline();
+      // The clip encoder runs whenever the camera is live, so a clip can include the 60 s before
+      // a change even when that change is what starts the recording.
+      this.startEncoding();
+      if (this.recording) this.startTimelapse();
     } catch (e) {
       this.status = 'Not available';
       this.error = (e as Error).name === 'NotAllowedError' ? 'Camera permission was refused in the browser' : (e as Error).message;
@@ -173,7 +176,7 @@ export class CameraModule {
     this.counts = { timelapse: 0, clip: 0, snapshot: 0 };
     if (this.stream) {
       this.status = 'Recording';
-      this.startPipeline();
+      this.startTimelapse();
     }
     this.changed.emit(this);
   }
@@ -181,7 +184,7 @@ export class CameraModule {
   async stopRecording(): Promise<void> {
     this.recording = false;
     for (const clip of this.buffer.flush()) await this.saveClip(clip);
-    this.stopPipeline();
+    this.stopTimelapse();
     if (this.stream) this.status = 'Live';
     this.changed.emit(this);
   }
@@ -203,17 +206,24 @@ export class CameraModule {
     return m;
   }
 
-  private startPipeline(): void {
+  private startTimelapse(): void {
     window.clearInterval(this.timelapseTimer);
     this.timelapseTimer = window.setInterval(() => void this.timelapseFrame(), VIDEO.timelapseMs);
     void this.timelapseFrame();
+  }
+
+  private stopTimelapse(): void {
+    window.clearInterval(this.timelapseTimer);
+    this.timelapseTimer = undefined;
+  }
+
+  private startEncoding(): void {
     if (clipsSupported()) void this.startEncoder();
     else this.clipNote = 'Clips need a newer Chromium (WebCodecs); time-lapse only';
   }
 
   private stopPipeline(): void {
-    window.clearInterval(this.timelapseTimer);
-    this.timelapseTimer = undefined;
+    this.stopTimelapse();
     void this.reader?.cancel().catch(() => {});
     this.reader = undefined;
     if (this.encoder && this.encoder.state !== 'closed') this.encoder.close();

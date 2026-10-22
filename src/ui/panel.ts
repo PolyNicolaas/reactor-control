@@ -90,7 +90,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         const current = dev.snapshot.setpoints[sp.key];
         if (sp.unit === '°C' && current !== undefined && value - current > 50 && !confirm(`Raise ${sp.label.toLowerCase()} from ${current} to ${value} ${sp.unit}?`)) return;
         await dev.setSetpoint(sp.key, value);
-        app.note(`${dev.label}: ${dev.specLabel(sp).toLowerCase()} set to ${value} ${sp.unit}`);
+        app.change(`${dev.label}: ${dev.specLabel(sp).toLowerCase()} set to ${value} ${sp.unit}`);
       } catch (e) {
         toast((e as Error).message, 'error');
       }
@@ -112,7 +112,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         if (on && sw.confirmOn && !confirm(sw.confirmOn)) return;
         try {
           await dev.setSwitch(sw.key, on);
-          app.note(`${dev.label}: ${dev.specLabel(sw).toLowerCase()} ${on ? 'on' : 'off'}`);
+          app.change(`${dev.label}: ${dev.specLabel(sw).toLowerCase()} ${on ? 'on' : 'off'}`);
         } catch (e) {
           toast((e as Error).message, 'error');
         }

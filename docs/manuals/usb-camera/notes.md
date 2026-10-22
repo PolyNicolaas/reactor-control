@@ -19,6 +19,7 @@
 | What | Result |
 | --- | --- |
 | Chromium 141 with a fake camera (automated) | Live view, time-lapse every 10 s, a 65 s VP8 clip (1280×720, 649 frames) around a setpoint change, zip download — OK (2026-10-22) |
+| Chromium 141, fake camera: stirrer motor switched on with nothing recording | Recording started by itself; clip from 11 s before the run (all the buffer had) to 60 s after, triggers "motor on; stirring started" — OK (2026-10-22) |
 | Real webcam on a laptop | To do |
 | Raspberry Pi 5 / Pi 4 with VNC connected: encode rate shown on the card | To do — decides the final defaults |
 

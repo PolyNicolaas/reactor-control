@@ -40,7 +40,7 @@ export function cameraPanel(app: App, cam: CameraModule): { el: HTMLElement; upd
       clipEl,
       errEl,
       h('div', { class: 'cam-actions' }, snapBtn, markBtn, lockBtn, retryBtn),
-      h('p', { class: 'hint' }, `While recording: a ${VIDEO.width}×${VIDEO.height} photo every ${VIDEO.timelapseMs / 1000} s, and a clip from ${VIDEO.clipPreMs / 1000} s before to ${VIDEO.clipPostMs / 1000} s after every change or note. No continuous video. Settings are fixed for now.`),
+      h('p', { class: 'hint' }, `Every change saves a clip from ${VIDEO.clipPreMs / 1000} s before to ${VIDEO.clipPostMs / 1000} s after it: a setpoint or switch changed here, stirring starting or stopping, a setpoint changed on the unit, Stop all, a note. If nothing is recording, the first change starts the recording. While recording, a ${VIDEO.width}×${VIDEO.height} photo every ${VIDEO.timelapseMs / 1000} s. No continuous video; settings fixed for now.`),
     ),
   );
 
@@ -56,8 +56,8 @@ export function cameraPanel(app: App, cam: CameraModule): { el: HTMLElement; upd
       const n = (k: number, one: string) => `${k} ${one}${k === 1 ? '' : 's'}`;
       parts.push(n(cam.counts.timelapse, 'time-lapse frame'), n(cam.counts.clip, 'clip'));
       if (cam.counts.snapshot) parts.push(n(cam.counts.snapshot, 'snapshot'));
-      if (clipsSupported()) parts.push(`encoding ${cam.encodeFps} fps`);
     }
+    if (live && clipsSupported()) parts.push(`encoding ${cam.encodeFps} fps`);
     info.textContent = parts.filter(Boolean).join(' · ');
     clipEl.textContent = cam.clipNote;
     errEl.textContent = cam.error;

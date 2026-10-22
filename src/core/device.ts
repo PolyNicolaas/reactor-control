@@ -21,6 +21,14 @@ export interface UserLimits {
 export class DeviceInstance {
   readonly changed = new Emitter<DeviceInstance>();
   readonly events = new Emitter<DeviceEvent>();
+  /**
+   * Changes the unit itself shows, found by polling: activity starting/stopping (stirring) and
+   * setpoints changed outside this page's card (unit keypad, bench terminal). Text without the
+   * device label, e.g. "stirring started (speed 210 rpm)".
+   */
+  readonly changes = new Emitter<string>();
+  private active: Record<string, boolean | undefined> = {};
+  private lastWrite: Record<string, number> = {};
 
   snapshot: DeviceSnapshot = { values: {}, gross: {}, setpoints: {}, switches: {} };
   /** Software tare offsets per tareable reading (device units). */
@@ -149,6 +157,7 @@ export class DeviceInstance {
   }
 
   private async pollOnce(): Promise<void> {
+    const prevSetpoints = { ...this.snapshot.setpoints };
     const parse = this.driver.parse ?? parseNumber;
     let ok = 0;
     let fail = 0;
@@ -223,8 +232,33 @@ export class DeviceInstance {
       for (const sw of this.driver.switches) {
         if (before[sw.key] && !this.snapshot.switches[sw.key]) {
           this.log('error', `${this.specLabel(sw)} stopped on the unit itself (keypad, overload or end of a dose)`);
+          this.changes.emit(`${this.specLabel(sw).toLowerCase()} stopped on the unit`);
         }
       }
+    }
+    if (this.responding) this.detectChanges(prevSetpoints);
+  }
+
+  /** Report activity crossing its threshold and setpoints changed outside the card. */
+  private detectChanges(prevSetpoints: Record<string, number | undefined>): void {
+    for (const r of this.driver.readings) {
+      if (!r.activity) continue;
+      const v = this.snapshot.values[r.key];
+      if (v === undefined) continue;
+      const now = v > r.activity.above;
+      const was = this.active[r.key];
+      this.active[r.key] = now;
+      if (was === undefined || was === now) continue;
+      this.changes.emit(`${r.activity.name} ${now ? 'started' : 'stopped'} (${this.specLabel(r).toLowerCase()} ${Math.round(v)} ${r.unit})`);
+    }
+    const t = Date.now();
+    for (const sp of this.driver.setpoints) {
+      const before = prevSetpoints[sp.key];
+      const after = this.snapshot.setpoints[sp.key];
+      if (before === undefined || after === undefined) continue;
+      if (Math.abs(after - before) <= Math.max(sp.tolerance, (sp.toleranceRel ?? 0) * Math.abs(before))) continue;
+      if (this.pending[sp.key] !== undefined || t - (this.lastWrite[sp.key] ?? 0) < 3000) continue; // our own write
+      this.changes.emit(`${this.specLabel(sp).toLowerCase()} setpoint changed on the unit: ${before} → ${after} ${sp.unit}`);
     }
   }
 
@@ -292,6 +326,7 @@ export class DeviceInstance {
     const v = this.checkSetpoint(key, value);
     const sp = this.driver.setpoints.find((s) => s.key === key)!;
     this.pending[key] = v;
+    this.lastWrite[key] = Date.now();
     this.changed.emit(this);
     try {
       await this.send(this.driver.formatSetpoint ? this.driver.formatSetpoint(sp, v) : `${sp.cmd} ${v}`);

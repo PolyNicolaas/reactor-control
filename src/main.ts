@@ -234,6 +234,11 @@ function downloadBlob(name: string, blob: Blob) {
   }, 2000);
 }
 
+app.autoStarted.on((text) => {
+  dlBtn.disabled = true;
+  toast(`Recording started automatically: ${text}`);
+});
+
 // Snapshots taken while not recording download straight away.
 app.looseMedia.on(({ cam, m }) => {
   const d = new Date(m.t);

@@ -34,6 +34,12 @@ export interface ReadingSpec {
   hidden?: boolean;     // recorded, but no tile in the panel
   everyN?: number;      // poll only every Nth cycle (slow-changing values)
   group?: string;       // panel section, e.g. a pump channel
+  /**
+   * The reading shows the unit is doing something (e.g. speed above 20 rpm = stirring). Crossing the
+   * threshold either way is reported as a change (camera clip, event), whether the app or the
+   * unit's own controls caused it.
+   */
+  activity?: { name: string; above: number };
 }
 
 export interface SetpointSpec {

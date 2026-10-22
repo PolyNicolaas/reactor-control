@@ -56,7 +56,7 @@ The station workflow (D23):
 | **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
 | **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
-| **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change or note (setpoints, switches, Stop all, notes, **Mark**), merged when changes are close, max 5 min | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
+| **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31) | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
 | **Camera — snapshots** (button) | While recording: `snapshots/` in the zip; otherwise downloaded at once | Same | |
 | Camera list (name, which camera) | Browser storage (`reactor-control.page`) | Until changed | Cameras restart on reload once the site has camera permission |
 
@@ -79,7 +79,7 @@ Not recorded today: reaction ID, station name, operator, the program/plan, the s
 - **Drivers describe devices; the core does the work.** A driver lists readings, setpoints, switches, stop commands and its wire protocol. Panels, polling, chart, recording and Stop all are generic. Adding a model is a new driver file (see README).
 - **Protocols:** NAMUR for IKA (9600 7E1, CR LF, unacknowledged writes) and Ismatec for the Reglo ICC (9600 8N1, CR, `*`/`#` acknowledgements). Add device tries both.
 - **One command in flight per port**; polling and user commands share the queue.
-- **Cameras are not serial devices.** They use the browser camera API (`getUserMedia`) and have their own card and code (`src/camera/`). Every change on the page is logged as a note; each note while recording triggers a clip on every camera. Clips are encoded once (WebCodecs) into a rolling 60 s buffer, so a clip can start before the change (D28).
+- **Cameras are not serial devices.** They use the browser camera API (`getUserMedia`) and have their own card and code (`src/camera/`). Every change is logged as a note — changes made on the cards, and changes each unit shows by itself, found by polling (activity crossing a threshold, e.g. speed above 20 rpm = stirring; setpoints that changed without a write from the card). Each note while recording triggers a clip on every camera; with a camera present, a change starts the recording if none is running (D31). The encoder runs whenever a camera is live. Clips are encoded once (WebCodecs) into a rolling 60 s buffer, so a clip can start before the change (D28).
 - **Simulators and tests:** every driver has a simulated unit (usable from Add device) and tests in `src/test/` that run on every push (D27).
 - **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
 
@@ -134,6 +134,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D28 | 2026-10-22 | Camera module built on the browser camera API (not Web Serial): time-lapse by grabbing frames, clips by encoding once with WebCodecs into a rolling buffer and writing WebM; media kept in browser storage (IndexedDB) and downloaded with the recording until the host exists | Works with any UVC webcam in Chromium, no extra software on the Pi; one encoder keeps the Pi load low; IndexedDB keeps large files out of memory |
 | D29 | 2026-10-22 | **RET balance:** mass shown in whole grams; the app tares in software (net = gross − stored tare, all three recorded); mass is blank while heating or stirring and until the weighing key (G) is pressed and the reading settles (the RET answers exactly 0.0 outside weighing mode, so 0 counts as "not weighing"; an empty plate therefore shows the prompt too); Tare only when settled | The RET has no remote tare or weighing start, weighs only with heating and stirring off, and reports whole grams (manual p. 25, 35; bench 2026-10-22) |
 | D30 | 2026-10-22 | A unit that answers with correct framing but a **blank stored name** (all 0xFF) is treated as a working unit: it connects when its model is picked in Add device; after a reload it is reattached to the port no other model claims | Our RET's stored name is erased (`IN_NAME` → `ff`×7, `IN_TYPE` → `1`); refusing it would block a working unit. `OUT_NAME IKARET` may restore the name (untested) |
+| D31 | 2026-10-22 | **Any change triggers the camera**: setpoint or switch changes on the cards, stirring starting or stopping (from the speed reading, so also from the unit's own controls), setpoints changed on the unit, pump channels stopping on the pump, Stop all and notes. With a camera on the page and nothing recording, the first change starts the recording automatically; the clip still covers the 60 s before it | Changes made at the hood must be captured even if nobody pressed Start recording; first step toward always-on recording (D14) |
 
 ## 6. Programs (draft)
 
@@ -184,7 +185,7 @@ To decide later: which ELN; the reaction ID format the ELN generates; whether th
 
 Decided to add a camera (D18); model not chosen (options: USB webcams such as the Logitech C920 class or Arducam UVC cameras). The camera is treated like a module: plugged into the station Pi for the reaction and connected in the app.
 
-**Built (trial, D28):** **Add camera** on the control page; the card shows the live view, resolution, counts, and the measured encode rate; **Snapshot**, **Mark (save clip)** and, where the camera supports it, **Lock focus & exposure**. While recording it makes the time-lapse and change clips described below and they download with the recording as one zip. Not built yet: streaming to the host (needs the server), live tile for remote viewers. Notes and tests: [manuals/usb-camera/notes.md](manuals/usb-camera/notes.md).
+**Built (trial, D28, D31):** **Add camera** on the control page; the card shows the live view, resolution, counts, and the measured encode rate; **Snapshot**, **Mark (save clip)** and, where the camera supports it, **Lock focus & exposure**. While recording it makes the time-lapse and change clips described below and they download with the recording as one zip. Not built yet: streaming to the host (needs the server), live tile for remote viewers. Notes and tests: [manuals/usb-camera/notes.md](manuals/usb-camera/notes.md).
 
 **What the station model (D23, D24) means for video**
 
@@ -311,6 +312,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 
 - Recordings live in memory until downloaded; a reload loses them (fixed by roadmap item 1).
 - No reaction ID, station name or operator in the record yet; the CSV files are named by date only.
+- A heater switched on with the unit's own controls is not detected (only from the card); `STATUS_1` on the RET could tell, once tested on the bench. Auto-start of recording happens only with a camera on the page.
 - Camera media stays in that browser until downloaded and is cleared when the next recording starts; clips need Chromium (WebCodecs); the encode rate on a Pi with VNC is untested; focus/exposure lock depends on the camera.
 - Changes are logged as commands, not as "who changed what".
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
@@ -331,6 +333,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Which units must use a watchdog, and what a reaction should do if its Pi fails (lab policy).
 - How long a station may run disconnected from the host, and how much local storage to allow for the queue.
 - Video retention on the host, storage size, and NU/department policy on recording in labs.
+- Should any change start a recording even without a camera (one step closer to always-on recording, D14)?
 - How each Pi gets its station name (kiosk URL parameter, or registered on the server).
 - Does `OUT_NAME IKARET` restore our RET's name permanently?
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
