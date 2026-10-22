@@ -1,8 +1,7 @@
 import { DeviceInstance, type DeviceEvent } from './device';
 import { Emitter } from './emitter';
-import { SerialTransport } from './serialTransport';
+import { SerialTransport, transportFor } from './serialTransport';
 import { getDriver } from '../devices/registry';
-import { SimTransport } from '../devices/simulator';
 import { probeName } from './probe';
 import type { SerialLink, Transport } from './types';
 
@@ -19,6 +18,7 @@ export interface SavedDevice {
   limits?: Record<string, number | undefined>;
   link?: SerialLink;
   tares?: Record<string, number>;
+  groupLabels?: Record<string, string>;
 }
 
 export interface PageConfig {
@@ -87,17 +87,18 @@ export class App {
   }
 
   /** Create a device instance, connect it and add it to the page. */
-  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number> }): Promise<DeviceInstance> {
+  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number>; groupLabels?: Record<string, string> }): Promise<DeviceInstance> {
     const driver = getDriver(opts.model);
     const dev = new DeviceInstance(opts.id ?? this.newId(driver.model), driver, opts.label, opts.color ?? this.nextColor(), opts.transport);
     if (opts.limits) dev.limits = { ...opts.limits };
     dev.link = opts.link;
     if (opts.tares) dev.tares = { ...opts.tares };
     dev.changed.on(() => this.saveSoon());
+    if (opts.groupLabels) dev.groupLabels = { ...opts.groupLabels };
     dev.changed.on(() => this.changed.emit());
     dev.events.on((e) => {
-      // Keep writes, errors and info; skip the once-a-second poll traffic (IN_* and replies).
-      if (e.kind === 'rx' || (e.kind === 'tx' && /^IN_/.test(e.text))) return;
+      // Keep writes, errors and info; skip the once-a-second poll traffic and all replies.
+      if (e.kind === 'rx' || (e.kind === 'tx' && dev.isPollCommand(e.text))) return;
       this.run?.events.push(e);
       this.logged.emit(e);
     });
@@ -175,6 +176,7 @@ export class App {
         limits: d.limits,
         link: d.link,
         tares: Object.keys(d.tares).length ? d.tares : undefined,
+        groupLabels: Object.keys(d.groupLabels).length ? d.groupLabels : undefined,
       };
     });
     this.config.devices.push(...this.missing);
@@ -210,7 +212,7 @@ export class App {
     for (const s of cfg.devices) {
       let transport: Transport | undefined;
       if (s.sim) {
-        transport = new SimTransport(s.model as 'eurostar60' | 'retControlVisc');
+        transport = getDriver(s.model).simulate();
       } else {
         // Identical units share USB ids, so ask each candidate port for its name and only take
         // the one this device's driver recognises (otherwise a saved "stirrer" could grab the hotplate).
@@ -225,7 +227,7 @@ export class App {
             if (!drv.identify(r.name)) continue;
             usedPorts.add(port);
             s.link = r.link;
-            transport = new SerialTransport(port, r.link.options, r.link.lineEnd);
+            transport = transportFor(port, r.link);
             break;
           } catch {
             /* no reply on this port: try the next */
@@ -234,7 +236,7 @@ export class App {
       }
       if (transport) {
         this.missing = this.missing.filter((m) => m.id !== s.id);
-        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares });
+        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares, groupLabels: s.groupLabels });
       } else {
         missing.push(s);
       }
@@ -251,18 +253,19 @@ export class App {
   columns(): Column[] {
     const cols: Column[] = [];
     for (const d of this.devices) {
+      const name = (spec: { label: string; group?: string }) => `${d.label} ${d.specLabel(spec).toLowerCase()}`;
       for (const r of d.driver.readings) {
-        cols.push({ key: `${d.id}.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()}${r.tareable ? ' net' : ''}`, unit: r.unit, kind: 'actual' });
+        cols.push({ key: `${d.id}.${r.key}`, deviceId: d.id, label: `${name(r)}${r.tareable ? ' net' : ''}`, unit: r.unit, kind: 'actual' });
         if (r.tareable) {
-          cols.push({ key: `${d.id}.gross.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()} gross`, unit: r.unit, kind: 'gross' });
-          cols.push({ key: `${d.id}.tare.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()} tare`, unit: r.unit, kind: 'gross' });
+          cols.push({ key: `${d.id}.gross.${r.key}`, deviceId: d.id, label: `${name(r)} gross`, unit: r.unit, kind: 'gross' });
+          cols.push({ key: `${d.id}.tare.${r.key}`, deviceId: d.id, label: `${name(r)} tare`, unit: r.unit, kind: 'gross' });
         }
       }
       for (const sp of d.driver.setpoints) {
-        cols.push({ key: `${d.id}.sp.${sp.key}`, deviceId: d.id, label: `${d.label} ${sp.label.toLowerCase()} setpoint`, unit: sp.unit, kind: 'setpoint' });
+        cols.push({ key: `${d.id}.sp.${sp.key}`, deviceId: d.id, label: `${name(sp)} setpoint`, unit: sp.unit, kind: 'setpoint' });
       }
       for (const sw of d.driver.switches) {
-        cols.push({ key: `${d.id}.sw.${sw.key}`, deviceId: d.id, label: `${d.label} ${sw.label.toLowerCase()} on`, unit: '0/1', kind: 'switch' });
+        cols.push({ key: `${d.id}.sw.${sw.key}`, deviceId: d.id, label: `${name(sw)} on`, unit: '0/1', kind: 'switch' });
       }
     }
     return cols;

@@ -1,6 +1,6 @@
 # Reactor Control
 
-A browser control page for lab reactor devices over Web Serial. Supported now: the IKA **EUROSTAR 60 control** overhead stirrer and the IKA **RET control-visc** hotplate stirrer; other devices plug in as drivers. It is a static site hosted on GitHub Pages; no server is needed.
+A browser control page for lab reactor devices over Web Serial. Supported now: the IKA **EUROSTAR 60 control** overhead stirrer, the IKA **RET control-visc** hotplate stirrer and the Ismatec **Reglo ICC** peristaltic pump (4 channels); other devices plug in as drivers. It is a static site hosted on GitHub Pages; no server is needed.
 
 **Live app:** https://polynicolaas.github.io/reactor-control/
 
@@ -22,7 +22,9 @@ A browser control page for lab reactor devices over Web Serial. Supported now: t
 - On Linux / Raspberry Pi: the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in).
 - On the RET control-visc: turn **off** the "Eurostar" option in the system settings, otherwise the heater switches off when the serial cable is unplugged.
 
-Serial settings used: 9600 baud, 7 data bits, even parity, 1 stop bit, no flow control; commands end with CR LF.
+Serial settings used: IKA 9600 baud 7E1, commands end with CR LF (NAMUR); Reglo ICC 9600 baud 8N1, commands end with CR. Add device tries both and picks the one the unit answers.
+
+On the Reglo ICC: set each channel's tubing inner diameter and rotation direction on the pump (the app sets flow rate mode and rate in mL/min, not direction). "Flow" on the card is the set rate while the channel runs; "Dispensed" is the app's running total, an estimate until the channel is calibrated.
 
 ## Raspberry Pi kiosk
 
@@ -39,7 +41,7 @@ The first time, each unit needs one click in the port picker (Add device). After
 ## Adding a device model
 
 1. Add a folder under `docs/manuals/` from `_template/` with the manual and notes.
-2. Copy `src/devices/eurostar60.ts` to a new file and fill in the readings, setpoints, switches and stop commands from the device manual.
+2. Copy `src/devices/eurostar60.ts` (IKA/NAMUR) or `src/devices/regloIcc.ts` (other protocols, channels, derived values) to a new file and fill in the readings, setpoints, switches and stop commands from the device manual. A new wire protocol goes in `src/core/protocol.ts`.
 3. Add it to `src/devices/registry.ts`.
 
 The panel, polling, chart, Stop all and recording pick it up automatically.
@@ -59,7 +61,8 @@ Pushing to `main` builds and deploys to GitHub Pages via `.github/workflows/depl
 | Path | Job |
 | --- | --- |
 | `src/core/types.ts` | Driver interface, NAMUR serial settings, reply parser |
-| `src/core/serialTransport.ts` | Web Serial: one command in flight, CR LF lines, timeouts |
+| `src/core/protocol.ts` | Wire protocols: NAMUR (IKA) and Ismatec — framing, acknowledgements, identify, probe settings |
+| `src/core/serialTransport.ts` | Web Serial: one command in flight, CR LF lines and one-character status replies, timeouts |
 | `src/core/device.ts` | One device instance: polling, setpoints, switches, stop, read-back |
 | `src/core/app.ts` | Devices on the page, saved config, 1 s sampler, recording |
 | `src/devices/*` | Drivers, registry, simulator |

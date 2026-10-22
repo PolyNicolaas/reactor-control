@@ -16,6 +16,9 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const spReadEls: Record<string, HTMLElement> = {};
   const spInputs: Record<string, HTMLInputElement> = {};
   const swEls: Record<string, HTMLButtonElement> = {};
+  const groupTitleEls: Record<string, HTMLElement> = {};
+  const groupEls: Record<string, HTMLElement> = {};
+  const grouped = !!d.groups?.length;
 
   const menu = h(
     'details',
@@ -28,6 +31,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       h('button', { onclick: () => { menu.open = false; app.moveDevice(dev, app.devices.indexOf(dev) + 1); } }, 'Move down'),
       h('button', { onclick: () => rename() }, 'Rename'),
       h('button', { onclick: () => editLimits() }, 'Limits'),
+      grouped && h('button', { onclick: () => editGroupNames() }, 'Channel names'),
       h('button', { onclick: () => openTerminal(app, dev) }, 'Bench terminal'),
       h('button', { class: 'danger-text', onclick: () => remove() }, 'Remove from page'),
     ),
@@ -39,10 +43,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
   });
 
-  const tiles = h(
-    'div',
-    { class: 'tiles' },
-    ...d.readings.map((r) => {
+  const tileFor = (r: (typeof d.readings)[number]) => {
       const v = h('span', { class: 'tile-value' }, '—');
       valueEls[r.key] = v;
       const note = h('span', { class: 'tile-note' });
@@ -71,10 +72,10 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       const tile = h('div', { class: `tile${r.primary ? ' primary' : ''}${r.tareable ? ' tareable' : ''}` }, h('span', { class: 'tile-label' }, r.unit === 'trend' ? r.label : `${r.label} (${r.unit})`), v, note, tools);
       tileEls[r.key] = tile;
       return tile;
-    }),
-  );
+  };
+  const shownReadings = d.readings.filter((r) => !r.hidden);
 
-  const setpointRows = d.setpoints.map((sp) => {
+  const spRowFor = (sp: (typeof d.setpoints)[number]) => {
     const input = h('input', {
       type: 'number', inputmode: 'decimal', min: sp.min, max: sp.max, step: sp.step,
       'aria-label': `${sp.label} setpoint (${sp.unit})`,
@@ -89,7 +90,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         const current = dev.snapshot.setpoints[sp.key];
         if (sp.unit === '°C' && current !== undefined && value - current > 50 && !confirm(`Raise ${sp.label.toLowerCase()} from ${current} to ${value} ${sp.unit}?`)) return;
         await dev.setSetpoint(sp.key, value);
-        app.note(`${dev.label}: ${sp.label.toLowerCase()} set to ${value} ${sp.unit}`);
+        app.note(`${dev.label}: ${dev.specLabel(sp).toLowerCase()} set to ${value} ${sp.unit}`);
       } catch (e) {
         toast((e as Error).message, 'error');
       }
@@ -102,27 +103,53 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       h('div', { class: 'sp-input' }, input, h('span', { class: 'unit' }, sp.unit), h('button', { onclick: apply }, 'Apply')),
       read,
     );
-  });
+  };
 
-  const switchRow = h(
-    'div',
-    { class: 'switches' },
-    ...d.switches.map((sw) => {
+  const switchFor = (sw: (typeof d.switches)[number]) => {
       const b = h('button', { class: 'switch', 'aria-pressed': 'false' }, sw.label) as HTMLButtonElement;
       b.addEventListener('click', async () => {
         const on = !dev.snapshot.switches[sw.key];
         if (on && sw.confirmOn && !confirm(sw.confirmOn)) return;
         try {
           await dev.setSwitch(sw.key, on);
-          app.note(`${dev.label}: ${sw.label.toLowerCase()} ${on ? 'on' : 'off'}`);
+          app.note(`${dev.label}: ${dev.specLabel(sw).toLowerCase()} ${on ? 'on' : 'off'}`);
         } catch (e) {
           toast((e as Error).message, 'error');
         }
       });
       swEls[sw.key] = b;
       return b;
-    }),
-  );
+  };
+
+  // Devices with groups (pump channels) get one compact block per group; others get the
+  // classic row: tiles | setpoints | switches.
+  const body: (HTMLElement | false)[] = grouped
+    ? [
+        h(
+          'div',
+          { class: 'groups' },
+          ...d.groups!.map((g) => {
+            const title = h('span', { class: 'group-title' }, dev.groupLabel(g.key) ?? g.label);
+            groupTitleEls[g.key] = title;
+            const block = h(
+              'div',
+              { class: 'group' },
+              h('div', { class: 'group-head' }, h('span', { class: 'dot' }), title),
+              h('div', { class: 'tiles' }, ...shownReadings.filter((r) => r.group === g.key).map(tileFor)),
+              ...d.setpoints.filter((sp) => sp.group === g.key).map(spRowFor),
+              ...d.switches.filter((sw) => sw.group === g.key).map(switchFor),
+            );
+            groupEls[g.key] = block;
+            return block;
+          }),
+        ),
+        shownReadings.some((r) => !r.group) && h('div', { class: 'tiles' }, ...shownReadings.filter((r) => !r.group).map(tileFor)),
+      ]
+    : [
+        h('div', { class: 'tiles' }, ...shownReadings.map(tileFor)),
+        h('div', { class: 'setpoints' }, ...d.setpoints.map(spRowFor)),
+        h('div', { class: 'switches' }, ...d.switches.map(switchFor)),
+      ];
 
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
@@ -130,7 +157,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const handle = h('button', { class: 'handle', 'aria-label': `Drag to reorder ${dev.label}`, title: 'Drag to reorder' }, '⠿');
   const el = h(
     'section',
-    { class: 'panel', style: `--dev:${dev.color}`, 'data-id': dev.id },
+    { class: `panel${grouped ? ' is-grouped' : ''}`, style: `--dev:${dev.color}`, 'data-id': dev.id },
     h(
       'header',
       {},
@@ -139,9 +166,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       statusEl,
       menu,
     ),
-    tiles,
-    h('div', { class: 'setpoints' }, ...setpointRows),
-    switchRow,
+    ...body,
     offline,
   );
 
@@ -151,7 +176,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     statusEl.dataset.state = st.toLowerCase().replace(/\s+/g, '-');
     titleEl.textContent = dev.label;
     el.classList.toggle('is-offline', !dev.connected);
-    for (const r of d.readings) {
+    for (const r of shownReadings) {
       const valid = dev.isValid(r.key);
       valueEls[r.key].textContent = valid ? fmt(dev.snapshot.values[r.key], decimalsFor(r.unit)) : '—';
       tileEls[r.key].classList.toggle('invalid', !valid);
@@ -184,6 +209,10 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       const on = dev.snapshot.switches[sw.key];
       swEls[sw.key].setAttribute('aria-pressed', String(on));
       swEls[sw.key].textContent = `${sw.label}: ${on ? 'ON' : 'OFF'}`;
+    }
+    for (const g of d.groups ?? []) {
+      groupTitleEls[g.key].textContent = dev.groupLabel(g.key) ?? g.label;
+      groupEls[g.key].classList.toggle('is-on', d.switches.some((sw) => sw.group === g.key && dev.snapshot.switches[sw.key]));
     }
   }
 
@@ -222,11 +251,38 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     });
   }
 
+  async function editGroupNames() {
+    menu.open = false;
+    await openDialog(`Channel names — ${dev.label}`, (close) => {
+      const inputs = d.groups!.map((g) => ({ g, i: h('input', { type: 'text', placeholder: g.label, value: dev.groupLabels[g.key] ?? '' }) as HTMLInputElement }));
+      return h(
+        'form',
+        {
+          class: 'form',
+          onsubmit: (e: Event) => {
+            e.preventDefault();
+            for (const { g, i } of inputs) {
+              if (i.value.trim()) dev.groupLabels[g.key] = i.value.trim();
+              else delete dev.groupLabels[g.key];
+            }
+            app.save();
+            app.changed.emit();
+            close(true);
+          },
+        },
+        h('p', { class: 'hint' }, 'Name each channel after what it pumps, e.g. "Reagent A". Names show on the card, the chart and in recordings. Programs still address channels as ch1, ch2…'),
+        ...inputs.map(({ g, i }) => h('label', {}, g.label, i)),
+        h('div', { class: 'actions' }, h('button', { class: 'primary', type: 'submit' }, 'Save')),
+      );
+    });
+    update();
+  }
+
   async function remove() {
     menu.open = false;
     const msg = app.run
-      ? `Remove ${dev.label} during a recording? Its data so far stays in the run. The unit is released to local control (${d.releaseCommand ?? 'no command'}).`
-      : `Remove ${dev.label} from this page? The unit is released to local control (${d.releaseCommand ?? 'no command'}).`;
+      ? `Remove ${dev.label} during a recording? Its data so far stays in the run. The unit is stopped and released to local control.`
+      : `Remove ${dev.label} from this page? The unit is stopped and released to local control.`;
     if (!confirm(msg)) return;
     await app.removeDevice(dev);
   }

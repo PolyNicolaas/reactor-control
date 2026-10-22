@@ -3,10 +3,7 @@ import type { DeviceInstance } from '../core/device';
 import { SerialTransport } from '../core/serialTransport';
 import { h, openDialog } from './dom';
 
-// Commands worth checking on each unit before trusting them in a driver.
-const VERIFY = ['IN_NAME', 'IN_PV_5', 'IN_PV_80', 'IN_PV_90', 'IN_SP_1', 'IN_SP_4', 'IN_SOFTWARE'];
-
-/** Bench terminal: send raw NAMUR commands to one device and see the replies. */
+/** Bench terminal: send raw commands to one device and see the replies. */
 export function openTerminal(app: App, dev: DeviceInstance): void {
   void openDialog(`Bench terminal — ${dev.label}`, () => {
     const out = h('pre', { class: 'term-out', 'aria-live': 'polite' });
@@ -14,9 +11,10 @@ export function openTerminal(app: App, dev: DeviceInstance): void {
       out.append(h('div', { class: cls }, `${new Date().toLocaleTimeString()}  ${text}`));
       out.scrollTop = out.scrollHeight;
     };
-    const input = h('input', { type: 'text', placeholder: 'e.g. IN_PV_4', autocapitalize: 'characters', spellcheck: 'false' }) as HTMLInputElement;
+    const p = dev.protocol;
+    const input = h('input', { type: 'text', class: p.caseSensitive ? 'cs' : '', placeholder: `e.g. ${p.benchCommands[1] ?? p.identifyCmd}`, autocapitalize: p.caseSensitive ? 'off' : 'characters', spellcheck: 'false' }) as HTMLInputElement;
     const send = async (cmd: string) => {
-      cmd = cmd.trim().toUpperCase();
+      cmd = dev.normalize(cmd);
       if (!cmd) return;
       line('tx', `> ${cmd}`);
       try {
@@ -34,12 +32,12 @@ export function openTerminal(app: App, dev: DeviceInstance): void {
       input,
       h('button', { class: 'primary', type: 'submit' }, 'Send'),
     );
-    const quick = h('div', { class: 'quick' }, ...VERIFY.map((c) => h('button', { type: 'button', onclick: () => send(c) }, c)));
+    const quick = h('div', { class: 'quick' }, ...p.benchCommands.map((c) => h('button', { type: 'button', onclick: () => send(c) }, c)));
     setTimeout(() => input.focus(), 50);
     return h(
       'div',
       { class: 'terminal' },
-      h('p', { class: 'hint' }, 'Commands go through the same queue as polling. Commands starting with IN_ wait for a reply; others are sent without one. Replies show the text and the raw bytes in hex. Use this to check the commands marked "verify" in the manual notes.'),
+      h('p', { class: 'hint' }, `Commands go through the same queue as polling. ${p.benchHint} Replies show the text and the raw bytes in hex. Use this to check the commands marked "manual" in the device notes.`),
       quick,
       out,
       form,

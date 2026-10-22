@@ -1,5 +1,6 @@
 import { Emitter } from './emitter';
 import { sleep } from './serialTransport';
+import { NAMUR, type Protocol } from './protocol';
 import { parseNumber, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
 
 export interface DeviceEvent {
@@ -32,9 +33,13 @@ export class DeviceInstance {
   limits: UserLimits = {};
   /** Serial settings found when connecting, if they differ from the driver's defaults. */
   link?: SerialLink;
+  /** User names for the driver's groups, e.g. pump channel 1 -> "Reagent A". */
+  groupLabels: Record<string, string> = {};
 
   private polling = false;
   private failures = 0;
+  private cycle = 0;
+  private lastPoll = 0;
 
   constructor(
     readonly id: string,
@@ -58,6 +63,27 @@ export class DeviceInstance {
     };
   }
 
+  get protocol(): Protocol {
+    return this.driver.protocol ?? NAMUR;
+  }
+
+  groupLabel(key?: string): string | undefined {
+    if (!key) return undefined;
+    return this.groupLabels[key] || this.driver.groups?.find((g) => g.key === key)?.label;
+  }
+
+  /** "Flow" -> "Ch 1 flow" for grouped specs; used by chart legends and CSV columns. */
+  specLabel(spec: { label: string; group?: string }): string {
+    const g = this.groupLabel(spec.group);
+    return g ? `${g} ${spec.label.toLowerCase()}` : spec.label;
+  }
+
+  /** Commands the poll loop sends (kept out of the event log). */
+  isPollCommand(cmd: string): boolean {
+    if (cmd === this.protocol.identifyCmd) return true;
+    return this.driver.readings.some((r) => r.cmd === cmd) || this.driver.setpoints.some((sp) => sp.readCmd === cmd);
+  }
+
   get status(): DeviceStatus {
     if (!this.connected) return 'Disconnected';
     if (!this.responding) return 'No reply';
@@ -76,13 +102,21 @@ export class DeviceInstance {
     this.events.emit({ t: Date.now(), deviceId: this.id, kind, text });
   }
 
-  /** Open the transport, check identity, start polling. Returns the IN_NAME reply. */
+  /** Open the transport, check identity, run the driver's init commands, start polling. Returns the name reply. */
   async connect(): Promise<string> {
     await this.transport.open();
     this.connected = true;
-    const name = (await this.transport.request('IN_NAME', true)) ?? '';
+    const name = (await this.transport.request(this.protocol.identifyCmd, true)) ?? '';
     this.nameReply = name;
     this.log('info', `Identified as "${name}"`);
+    for (const cmd of this.driver.initCommands ?? []) {
+      try {
+        await this.send(cmd);
+      } catch (e) {
+        this.log('error', `Setup ${cmd}: ${(e as Error).message}`);
+      }
+    }
+    this.lastPoll = performance.now();
     this.startPolling();
     this.changed.emit(this);
     return name;
@@ -125,8 +159,10 @@ export class DeviceInstance {
         return undefined;
       }
     };
+    const cycle = this.cycle++;
     for (const r of this.driver.readings) {
       if (!this.polling) return;
+      if (!r.cmd || (r.everyN && cycle % r.everyN !== 0)) continue;
       const v = await read(r.cmd);
       if (r.tareable) {
         this.snapshot.gross[r.key] = v;
@@ -140,10 +176,34 @@ export class DeviceInstance {
       const v = await read(sp.readCmd);
       this.snapshot.setpoints[sp.key] = v;
       const want = this.pending[sp.key];
-      if (want !== undefined && v !== undefined && Math.abs(v - want) <= sp.tolerance) delete this.pending[sp.key];
+      if (want !== undefined && v !== undefined && Math.abs(v - want) <= Math.max(sp.tolerance, (sp.toleranceRel ?? 0) * Math.abs(want))) {
+        delete this.pending[sp.key];
+      }
     }
     this.failures = ok === 0 && fail > 0 ? this.failures + 1 : 0;
     this.responding = this.failures < 2;
+    const now = performance.now();
+    const dt = (now - this.lastPoll) / 1000;
+    this.lastPoll = now;
+    if (this.driver.derive && this.responding) {
+      const before = { ...this.snapshot.switches };
+      this.driver.derive(this.snapshot, dt);
+      for (const sw of this.driver.switches) {
+        if (before[sw.key] && !this.snapshot.switches[sw.key]) {
+          this.log('error', `${this.specLabel(sw)} stopped on the unit itself (keypad, overload or end of a dose)`);
+        }
+      }
+    }
+  }
+
+  /** Send a write. For acknowledged protocols, wait for the reply and throw if it was refused. */
+  private async send(cmd: string): Promise<void> {
+    const p = this.protocol;
+    if (!p.acked) {
+      await this.transport.request(cmd, false);
+      return;
+    }
+    p.checkAck(cmd, await this.transport.request(cmd, true));
   }
 
   /** True when a reading can be trusted right now (see ReadingSpec.validWhen). */
@@ -192,14 +252,20 @@ export class DeviceInstance {
     const sp = this.driver.setpoints.find((s) => s.key === key)!;
     this.pending[key] = v;
     this.changed.emit(this);
-    await this.transport.request(`${sp.cmd} ${v}`, false);
+    try {
+      await this.send(this.driver.formatSetpoint ? this.driver.formatSetpoint(sp, v) : `${sp.cmd} ${v}`);
+    } catch (e) {
+      delete this.pending[key];
+      this.changed.emit(this);
+      throw e;
+    }
     if (!sp.readCmd) delete this.pending[key];
   }
 
   async setSwitch(key: string, on: boolean): Promise<void> {
     const sw = this.driver.switches.find((s) => s.key === key);
     if (!sw) throw new Error(`No switch ${key}`);
-    await this.transport.request(on ? sw.on : sw.off, false);
+    await this.send(on ? sw.on : sw.off);
     this.snapshot.switches[key] = on;
     this.changed.emit(this);
   }
@@ -207,7 +273,7 @@ export class DeviceInstance {
   async stopAll(): Promise<void> {
     for (const cmd of this.driver.stopCommands) {
       try {
-        await this.transport.request(cmd, false);
+        await this.send(cmd);
       } catch (e) {
         this.log('error', `${cmd}: ${(e as Error).message}`);
       }
@@ -216,10 +282,15 @@ export class DeviceInstance {
     this.changed.emit(this);
   }
 
+  /** Tidy a typed command: trim, and upper-case it unless the protocol is case-sensitive. */
+  normalize(cmd: string): string {
+    return this.protocol.caseSensitive ? cmd.trim() : cmd.trim().toUpperCase();
+  }
+
   /** Raw command from the bench terminal. */
   async raw(cmd: string): Promise<string | null> {
-    const expect = /^IN_/i.test(cmd.trim());
-    return this.transport.request(cmd.trim().toUpperCase(), expect);
+    const c = this.normalize(cmd);
+    return this.transport.request(c, this.protocol.expectsReply(c));
   }
 
   get running(): boolean {
@@ -228,11 +299,14 @@ export class DeviceInstance {
 
   async disconnect(release: boolean): Promise<void> {
     this.polling = false;
-    if (release && this.connected && this.driver.releaseCommand) {
-      try {
-        await this.transport.request(this.driver.releaseCommand, false);
-      } catch {
-        /* ignore */
+    if (release && this.connected) {
+      // Removing a unit from the page stops it before handing it back to local control.
+      for (const cmd of [...this.driver.stopCommands, ...(this.driver.releaseCommand ? [this.driver.releaseCommand] : [])]) {
+        try {
+          await this.send(cmd);
+        } catch {
+          /* ignore */
+        }
       }
     }
     this.connected = false;

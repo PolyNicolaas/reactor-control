@@ -1,10 +1,13 @@
+import type { Protocol } from './protocol';
+
 // Shared types. A driver DESCRIBES a device model; the shared core does the work.
 
 export interface ReadingSpec {
   key: string;          // stable id, e.g. "speed"
   label: string;        // shown in the UI
   unit: string;         // "°C", "rpm", "Ncm"
-  cmd: string;          // NAMUR read command, e.g. "IN_PV_4"
+  /** Read command, e.g. "IN_PV_4". Omit for a value the driver computes in derive(). */
+  cmd?: string;
   chart?: boolean;      // plot on the live chart
   primary?: boolean;    // shown large in the panel
   /** Software tare: the app subtracts a stored offset and shows net values. */
@@ -13,6 +16,9 @@ export interface ReadingSpec {
   validWhen?: (s: DeviceSnapshot) => boolean;
   /** Shown instead of the value when validWhen is false. */
   invalidNote?: string;
+  hidden?: boolean;     // recorded, but no tile in the panel
+  everyN?: number;      // poll only every Nth cycle (slow-changing values)
+  group?: string;       // panel section, e.g. a pump channel
 }
 
 export interface SetpointSpec {
@@ -26,7 +32,9 @@ export interface SetpointSpec {
   step: number;
   decimals: number;
   tolerance: number;    // read-back within this counts as "confirmed"
+  toleranceRel?: number; // ...or within this fraction of the value (devices that round to significant figures)
   actualKey?: string;   // the reading this setpoint drives (for status and charts)
+  group?: string;
 }
 
 export interface SwitchSpec {
@@ -35,9 +43,10 @@ export interface SwitchSpec {
   on: string;           // e.g. "START_4"
   off: string;          // e.g. "STOP_4"
   confirmOn?: string;   // ask before switching on (e.g. heater)
+  group?: string;
 }
 
-export type DeviceStatus = 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'No reply' | 'Disconnected' | 'Connecting';
+export type DeviceStatus = 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
 
 export interface DeviceSnapshot {
   values: Record<string, number | undefined>;      // reading key -> value (net, after tare)
@@ -62,15 +71,28 @@ export interface DeviceDriver {
   watchdog?: { verified: boolean; arm(seconds: number): string };
   status(s: DeviceSnapshot): DeviceStatus;
   parse?(reply: string): number | undefined;
+  /** Wire protocol; default NAMUR (IKA). */
+  protocol?: Protocol;
+  /** Sent once after identifying, before polling (e.g. enable per-channel addressing). */
+  initCommands?: string[];
+  /** Build the write for a setpoint; default "<cmd> <value>". */
+  formatSetpoint?(sp: SetpointSpec, value: number): string;
+  /** Runs after every poll: compute derived readings, reconcile state. May edit the snapshot. */
+  derive?(s: DeviceSnapshot, dtSeconds: number): void;
+  /** Panel sections, in order; specs with a matching `group` are drawn inside them. */
+  groups?: { key: string; label: string }[];
+  /** A simulated unit for testing without hardware. */
+  simulate(): Transport;
 }
 
 /** Serial settings that actually work for one unit (may differ from the driver default). */
 export interface SerialLink {
   options: SerialOptions;
   lineEnd: string;
+  protocol?: 'namur' | 'ismatec'; // absent in pages saved before the pump was added = namur
 }
 
-/** Something that carries NAMUR lines to a device: Web Serial or the simulator. */
+/** Something that carries command lines to a device: Web Serial or the simulator. */
 export interface Transport {
   readonly kind: 'serial' | 'sim';
   open(): Promise<void>;

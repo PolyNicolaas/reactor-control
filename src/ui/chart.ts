@@ -16,7 +16,7 @@ const STATE_KEY = 'reactor-control.chart';
 // Fixed axis widths + right padding keep every lane's plot area aligned on the shared time axis.
 const AXIS_W = 72;
 // Smallest y span per unit, so sensor noise is not blown up to fill the lane.
-const MIN_SPAN: Record<string, number> = { '°C': 10, rpm: 100, Ncm: 5, g: 10 };
+const MIN_SPAN: Record<string, number> = { '°C': 10, rpm: 100, Ncm: 5, g: 10, 'mL/min': 1 };
 
 function minSpan(min: number | null, max: number | null, span: number): [number, number] {
   if (min == null || max == null || !Number.isFinite(min) || !Number.isFinite(max)) return [0, span];
@@ -53,14 +53,14 @@ interface ChartState {
 function laneSeries(dev: DeviceInstance): LaneSeries[] {
   const colorOf: Record<string, string> = {};
   const out: LaneSeries[] = [];
-  dev.driver.readings.forEach((r, i) => {
+  dev.driver.readings.filter((r) => r.chart).forEach((r, i) => {
     colorOf[r.key] = CHANNEL_COLORS[i % CHANNEL_COLORS.length];
-    if (r.chart) out.push({ key: `${dev.id}.${r.key}`, short: r.label, unit: r.unit, color: colorOf[r.key], setpoint: false });
+    out.push({ key: `${dev.id}.${r.key}`, short: dev.specLabel(r), unit: r.unit, color: colorOf[r.key], setpoint: false });
   });
   for (const sp of dev.driver.setpoints) {
     out.push({
       key: `${dev.id}.sp.${sp.key}`,
-      short: `${sp.label} setpoint`,
+      short: `${dev.specLabel(sp)} setpoint`,
       unit: sp.unit,
       color: (sp.actualKey && colorOf[sp.actualKey]) || '#888',
       setpoint: true,

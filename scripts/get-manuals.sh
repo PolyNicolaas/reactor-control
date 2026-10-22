@@ -30,3 +30,8 @@ fetch ret-control-visc \
   RET_control-visc_operating_instructions_20000004159.pdf \
   "https://assets.wolflabs.co.uk/AssetsStore/IKA_hotplates_RET-Control-Visc_manual.pdf" \
   1e1606aeb1921599d8b60672cba583c1bbe40f58ca44b63fa7744ff9d177219b
+
+fetch reglo-icc \
+  Reglo_ICC_operating_manual_14-036-E_revC.pdf \
+  "https://github.com/numat/ismatec/raw/master/doc/14-036-e-ismatec-reglo-icc-english-revc.pdf" \
+  c54f492a7ffee366d98f4f8d3d25b989614ecc51ad89e59a1d207420d5719536

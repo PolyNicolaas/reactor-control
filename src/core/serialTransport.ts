@@ -1,10 +1,12 @@
-import type { Transport } from './types';
+import { protocolOf } from './protocol';
+import type { SerialLink, Transport } from './types';
 
 /**
- * Web Serial transport for IKA NAMUR devices.
- * - One command in flight at a time (IKA replies carry no request id).
- * - Lines end with CR LF.
- * - Commands without a reply (OUT_SP_*, START_*, STOP_*) get a short settle delay;
+ * Web Serial transport for line-based lab devices (IKA NAMUR, Ismatec).
+ * - One command in flight at a time (replies carry no request id).
+ * - Replies end with CR LF. With statusReplies, a lone *, #, + or - is also a complete reply
+ *   (Ismatec answers writes with one character and no line end).
+ * - Commands without a reply (IKA OUT_SP_*, START_*, STOP_*) get a short settle delay;
  *   any echo the device sends in that window is logged and discarded.
  */
 export class SerialTransport implements Transport {
@@ -29,6 +31,7 @@ export class SerialTransport implements Transport {
     private lineEnd = '\r\n',
     private timeoutMs = 1000,
     private settleMs = 120,
+    private statusReplies = false,
   ) {}
 
   async open(): Promise<void> {
@@ -66,17 +69,28 @@ export class SerialTransport implements Transport {
           this.raw = [];
           if (!line) continue;
           this.onLog?.('rx', line);
-          if (this.waiting) {
-            const w = this.waiting;
-            this.waiting = undefined;
-            w.resolve(line);
-          }
+          this.deliver(line);
+        }
+        if (this.statusReplies && /^[*#+\-]$/.test(this.buffer)) {
+          const line = this.buffer;
+          this.buffer = '';
+          this.lastRawHex = this.raw.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+          this.raw = [];
+          this.onLog?.('rx', line);
+          this.deliver(line);
         }
       }
     } catch (e) {
       this.onLog?.('info', `read error: ${(e as Error).message}`);
     }
     if (!this.closing) this.onDisconnect?.();
+  }
+
+  private deliver(line: string): void {
+    if (!this.waiting) return; // unsolicited or late: logged above, then dropped
+    const w = this.waiting;
+    this.waiting = undefined;
+    w.resolve(line);
   }
 
   request(cmd: string, expectReply: boolean): Promise<string | null> {
@@ -132,6 +146,11 @@ export class SerialTransport implements Transport {
       /* unplugged */
     }
   }
+}
+
+/** A transport with the framing a saved or probed link needs. */
+export function transportFor(port: SerialPort, link: SerialLink, timeoutMs?: number): SerialTransport {
+  return new SerialTransport(port, link.options, link.lineEnd, timeoutMs, undefined, protocolOf(link).statusReplies);
 }
 
 export function sleep(ms: number): Promise<void> {

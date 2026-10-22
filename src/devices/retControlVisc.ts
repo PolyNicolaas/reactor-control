@@ -1,4 +1,5 @@
 import { NAMUR_SERIAL, type DeviceDriver } from '../core/types';
+import { SimTransport } from './simulator';
 
 // IKA RET control-visc — hotplate stirrer (0–340 °C plate, external PT100 probe).
 // Source: operating instructions 20000004159, p. 31–33 (see docs/manuals/ret-control-visc/notes.md).
@@ -45,6 +46,7 @@ export const retControlVisc: DeviceDriver = {
   releaseCommand: 'RESET',
   // Documented in the manual (p. 31); not used by the app until tried on the bench.
   watchdog: { verified: false, arm: (s) => `OUT_WD1@${s}` },
+  simulate: () => new SimTransport('retControlVisc'),
   status: (s) => {
     if (s.switches.heater) {
       const t = s.values.probe ?? s.values.plate;

@@ -6,10 +6,11 @@ One folder per device model. Each holds the manufacturer's manual (PDF) and a `n
 | --- | --- | --- | --- |
 | IKA EUROSTAR 60 control (also 100 control) | [eurostar-60-control](eurostar-60-control/notes.md) | Operating instructions 20000003965c (03/2018), 21 pages, EN | PDF p. 17 |
 | IKA RET control-visc | [ret-control-visc](ret-control-visc/notes.md) | Operating instructions 20000004159 (04/2019), 136 pages, multilingual (EN from p. 20) | PDF p. 31–33 |
+| Ismatec Reglo ICC (peristaltic pump) | [reglo-icc](reglo-icc/notes.md) | Operating manual 14-036-E rev. C, 36 pages, EN | PDF p. 17–33 |
 
 ## Where the PDFs are
 
-The PDFs are IKA's copyrighted documents, and this repo is public (needed for free GitHub Pages), so they are **not committed**. `.gitignore` excludes `docs/manuals/**/*.pdf`. Get them into the folders with:
+The PDFs are the manufacturers' copyrighted documents, and this repo is public (needed for free GitHub Pages), so they are **not committed**. `.gitignore` excludes `docs/manuals/**/*.pdf`. Get them into the folders with:
 
 ```bash
 ./scripts/get-manuals.sh

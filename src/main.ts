@@ -57,7 +57,7 @@ const views = new Map<DeviceInstance, ReturnType<typeof devicePanel>>();
 let lastIds = '';
 
 function renderPanels() {
-  const ids = app.devices.map((d) => `${d.id}:${d.label}`).join('|') + '#' + app.missing.map((m) => m.id).join('|');
+  const ids = app.devices.map((d) => `${d.id}:${d.label}:${JSON.stringify(d.groupLabels)}`).join('|') + '#' + app.missing.map((m) => m.id).join('|');
   if (ids !== lastIds) {
     lastIds = ids;
     for (const dev of [...views.keys()]) if (!app.devices.includes(dev)) views.delete(dev);

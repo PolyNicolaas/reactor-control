@@ -1,9 +1,10 @@
 import type { DeviceDriver } from '../core/types';
 import { eurostar60 } from './eurostar60';
 import { retControlVisc } from './retControlVisc';
+import { regloIcc } from './regloIcc';
 
-// Every available driver. Adding a new IKA model = add a driver file and list it here.
-export const drivers: DeviceDriver[] = [eurostar60, retControlVisc];
+// Every available driver. Adding a new model = add a driver file and list it here.
+export const drivers: DeviceDriver[] = [eurostar60, retControlVisc, regloIcc];
 
 export function getDriver(model: string): DeviceDriver {
   const d = drivers.find((x) => x.model === model);

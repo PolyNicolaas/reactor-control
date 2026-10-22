@@ -1,4 +1,5 @@
 import { NAMUR_SERIAL, type DeviceDriver } from '../core/types';
+import { SimTransport } from './simulator';
 
 // IKA EUROSTAR 60 control — overhead stirrer.
 // Source: operating instructions 20000003965c, p. 17 (see docs/manuals/eurostar-60-control/notes.md).
@@ -25,5 +26,6 @@ export const eurostar60: DeviceDriver = {
   switches: [{ key: 'motor', label: 'Motor', on: 'START_4', off: 'STOP_4' }],
   stopCommands: ['STOP_4'],
   releaseCommand: 'RESET',
+  simulate: () => new SimTransport('eurostar60'),
   status: (s) => (s.switches.motor ? 'Stirring' : 'Idle'),
 };

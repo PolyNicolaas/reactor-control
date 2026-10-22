@@ -1,10 +1,11 @@
 import type { App, SavedDevice } from '../core/app';
 import type { DeviceInstance } from '../core/device';
-import { SerialTransport, describePort, serialSupported } from '../core/serialTransport';
+import { SerialTransport, describePort, serialSupported, transportFor } from '../core/serialTransport';
+import { NAMUR } from '../core/protocol';
 import { probeName, type ProbeResult } from '../core/probe';
 import { detectDriver, drivers, getDriver } from '../devices/registry';
-import { SimTransport } from '../devices/simulator';
 import { h, openDialog, toast } from './dom';
+import type { DeviceDriver, SerialLink } from '../core/types';
 
 export function openAddDevice(app: App): void {
   void openDialog('Add device', (close) => {
@@ -31,7 +32,7 @@ export function openAddDevice(app: App): void {
         if (useSim.checked) {
           const m = model.value === 'auto' ? drivers[0].model : model.value;
           const drv = getDriver(m);
-          await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: new SimTransport(m as 'eurostar60' | 'retControlVisc') });
+          await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: drv.simulate() });
           close(true);
           return;
         }
@@ -43,7 +44,7 @@ export function openAddDevice(app: App): void {
         let m = model.value;
         let probe: ProbeResult;
         try {
-          probe = await probeName(port, (s) => (go.textContent = s));
+          probe = await probeName(port, (s) => (go.textContent = s), undefined, m === 'auto' ? undefined : getDriver(m).protocol ?? NAMUR);
         } catch (x) {
           const attempts = (x as { attempts?: string[] }).attempts ?? [(x as Error).message];
           details.replaceChildren(h('summary', {}, 'What each setting got back'), h('pre', {}, attempts.join('\n')));
@@ -64,7 +65,7 @@ export function openAddDevice(app: App): void {
         await app.addDevice({
           model: m,
           label: label.value.trim() || drv.kind,
-          transport: new SerialTransport(port, probe.link.options, probe.link.lineEnd),
+          transport: transportFor(port, probe.link),
           link: probe.link,
         });
         toast(`${drv.displayName} connected (${probe.label})`);
@@ -95,13 +96,13 @@ export function openAddDevice(app: App): void {
 export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<void> {
   try {
     if (dev.transport.kind === 'sim') {
-      await dev.replaceTransport(new SimTransport(dev.driver.model as 'eurostar60' | 'retControlVisc'));
+      await dev.replaceTransport(dev.driver.simulate());
       return;
     }
     const port = await navigator.serial.requestPort({ filters: portFilter(dev.transport instanceof SerialTransport ? dev.transport.port.getInfo() : {}) });
     const owner = app.portOwner(port);
     if (owner && owner !== dev) throw new Error(`That port is already used by "${owner.label}".`);
-    await dev.replaceTransport(new SerialTransport(port, dev.link?.options ?? dev.driver.serial, dev.link?.lineEnd ?? dev.driver.lineEnd));
+    await dev.replaceTransport(transportFor(port, dev.link ?? defaultLink(dev.driver)));
     app.save();
     toast(`${dev.label} reconnected`);
   } catch (e) {
@@ -116,10 +117,15 @@ export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
     if (owner) throw new Error(`That port is already used by "${owner.label}".`);
     app.forgetMissing(s.id);
     const drv = getDriver(s.model);
-    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, link: s.link, transport: new SerialTransport(port, s.link?.options ?? drv.serial, s.link?.lineEnd ?? drv.lineEnd) });
+    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, link: s.link, groupLabels: s.groupLabels, transport: transportFor(port, s.link ?? defaultLink(drv)) });
   } catch (e) {
     if ((e as Error).name !== 'NotFoundError') toast((e as Error).message, 'error');
   }
+}
+
+/** The driver's own serial settings, for units saved before their settings were probed. */
+function defaultLink(drv: DeviceDriver): SerialLink {
+  return { options: drv.serial, lineEnd: drv.lineEnd ?? '\r\n', protocol: (drv.protocol ?? NAMUR).id };
 }
 
 function portFilter(info: { usbVendorId?: number; usbProductId?: number }): SerialPortFilter[] {

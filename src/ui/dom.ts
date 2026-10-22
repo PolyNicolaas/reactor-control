@@ -20,7 +20,9 @@ export function fmt(v: number | undefined, decimals: number): string {
 }
 
 export function decimalsFor(unit: string): number {
-  return unit === 'rpm' ? 0 : 1;
+  if (unit === 'rpm') return 0;
+  if (unit === 'mm' || unit === 'mL') return 2;
+  return 1;
 }
 
 let toastTimer: number | undefined;
