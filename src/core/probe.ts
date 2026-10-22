@@ -10,7 +10,21 @@ export interface ProbeResult {
   link: SerialLink;
   label: string;
   attempts: string[]; // what each setting got back, for the error message
+  /**
+   * The unit answered with a properly framed line, but its stored name is blank (all 0xFF bytes:
+   * erased memory). Seen on our RET control-visc, 2026-10-22. It is still a working NAMUR unit.
+   */
+  blankName?: boolean;
+  /** Other identity replies (IN_TYPE, IN_SOFTWARE) asked when the name is blank. */
+  ids: string[];
 }
+
+/** Does a driver recognise this unit by its name or any other identity reply? */
+export function recognises(identify: (s: string) => boolean, r: Pick<ProbeResult, 'name' | 'ids'>): boolean {
+  return [r.name, ...r.ids].some((s) => !!s && identify(s));
+}
+
+const blankLine = (hex: string) => /^(ff ){1,16}0d 0a$/.test(hex.trim());
 
 /**
  * Ask the unit for its name with each candidate setting (every protocol's identify command).
@@ -37,9 +51,23 @@ export async function probeName(
     try {
       await t.open();
       const name = ((await t.request(protocolOf(p.link).identifyCmd, true)) ?? '').trim();
-      if (readable(name) && detectDriver(name)) return { name, link: p.link, label: p.label, attempts };
-      if (readable(name)) fallback ??= { name, link: p.link, label: p.label, attempts };
+      if (readable(name) && detectDriver(name)) return { name, link: p.link, label: p.label, attempts, ids: [] };
+      if (readable(name)) fallback ??= { name, link: p.link, label: p.label, attempts, ids: [] };
       attempts.push(`${p.label}: "${name}" [${t.lastRawHex || 'no bytes'}]`);
+      if (protocolOf(p.link).id === 'namur' && blankLine(t.lastRawHex)) {
+        // Framing works (a CR LF line came back) but the name is blank. Ask other identity commands.
+        const ids: string[] = [];
+        for (const cmd of ['IN_TYPE', 'IN_SOFTWARE']) {
+          try {
+            const r = ((await t.request(cmd, true)) ?? '').trim();
+            attempts.push(`  ${cmd}: "${r}" [${t.lastRawHex}]`);
+            if (readable(r)) ids.push(r);
+          } catch (e) {
+            attempts.push(`  ${cmd}: ${(e as Error).message}`);
+          }
+        }
+        return { name: '', link: p.link, label: p.label, attempts, ids, blankName: true };
+      }
     } catch (e) {
       attempts.push(`${p.label}: ${t.lastRawHex ? `garbled [${t.lastRawHex}]` : (e as Error).message}`);
     } finally {

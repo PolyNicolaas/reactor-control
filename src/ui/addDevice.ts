@@ -2,7 +2,7 @@ import type { App, SavedDevice } from '../core/app';
 import type { DeviceInstance } from '../core/device';
 import { SerialTransport, describePort, serialSupported, transportFor } from '../core/serialTransport';
 import { NAMUR } from '../core/protocol';
-import { probeName, type ProbeResult } from '../core/probe';
+import { probeName, recognises, type ProbeResult } from '../core/probe';
 import { detectDriver, drivers, getDriver } from '../devices/registry';
 import { h, openDialog, toast } from './dom';
 import type { DeviceDriver, SerialLink } from '../core/types';
@@ -53,11 +53,18 @@ export function openAddDevice(app: App): void {
         }
         const name = probe.name;
         details.hidden = true;
-        const found = detectDriver(name);
-        if (m === 'auto') {
+        const found = [name, ...probe.ids].map(detectDriver).find(Boolean);
+        if (probe.blankName && !found) {
+          // The unit talks (CR LF framing works) but its stored name is erased: it cannot say what it is.
+          details.replaceChildren(h('summary', {}, 'What the unit sent'), h('pre', {}, probe.attempts.join('\n')));
+          details.hidden = false;
+          if (m === 'auto') {
+            throw new Error('The unit answers, but its stored name is blank, so it cannot say what it is. Pick its model in the list above instead of Auto-detect, then connect again.');
+          }
+        } else if (m === 'auto') {
           if (!found) throw new Error(`The unit answered "${name}", which no driver recognises yet.`);
           m = found.model;
-        } else if (!getDriver(m).identify(name)) {
+        } else if (!recognises(getDriver(m).identify, probe)) {
           const ok = confirm(`This unit says "${name}", not ${getDriver(m).displayName}.${found ? ` It looks like a ${found.displayName}.` : ''} Connect anyway as ${getDriver(m).displayName}?`);
           if (!ok) throw new Error('Cancelled.');
         }
@@ -68,7 +75,7 @@ export function openAddDevice(app: App): void {
           transport: transportFor(port, probe.link),
           link: probe.link,
         });
-        toast(`${drv.displayName} connected (${probe.label})`);
+        toast(probe.blankName ? `${drv.displayName} connected (its stored name is blank; see the notes)` : `${drv.displayName} connected (${probe.label})`);
         close(true);
       } catch (x) {
         const msg = (x as Error).message;

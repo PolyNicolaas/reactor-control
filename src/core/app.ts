@@ -2,7 +2,8 @@ import { DeviceInstance, type DeviceEvent } from './device';
 import { Emitter } from './emitter';
 import { SerialTransport, transportFor } from './serialTransport';
 import { getDriver } from '../devices/registry';
-import { probeName } from './probe';
+import { detectDriver } from '../devices/registry';
+import { probeName, recognises } from './probe';
 import type { SerialLink, Transport } from './types';
 
 export const DEVICE_COLORS = ['#2f7de1', '#e0742f', '#2fa66a', '#a64fd6', '#d23f6b', '#1f9fb0', '#b28a12', '#6d7a8a'];
@@ -224,7 +225,9 @@ export class App {
         for (const port of candidates) {
           try {
             const r = await probeName(port, undefined, s.link);
-            if (!drv.identify(r.name)) continue;
+            // A blank-named unit is taken only if nothing else on that port identifies as another model.
+            const other = [r.name, ...r.ids].map(detectDriver).find((x) => x && x !== drv);
+            if (!recognises(drv.identify, r) && !(r.blankName && !other)) continue;
             usedPorts.add(port);
             s.link = r.link;
             transport = transportFor(port, r.link);
