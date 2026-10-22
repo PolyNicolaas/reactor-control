@@ -96,7 +96,7 @@ Feature review 2026-10-22. Found outside our manual; not used by the app yet. Co
 - [ ] What range and unit does the viscosity trend (`IN_PV_5`) report?
 - [x] Weighing resolution: whole grams (no decimals). Bench 2026-10-22.
 - [x] `IN_PV_90` needs weighing mode: no mass until G is pressed and the balance settles. Bench 2026-10-22.
-- [ ] What do `IN_TYPE` and `IN_SOFTWARE` return on our unit (stored name is blank)?
+- [x] `IN_TYPE` returns `1`; `IN_SOFTWARE` gives no reply. Neither identifies the unit. Bench 2026-10-22.
 - [ ] Does `OUT_NAME IKARET` restore the name, and does it survive a power cycle?
 - [ ] What exactly does `IN_PV_90` reply before G is pressed: nothing, an error code, or a number? (Check the raw hex in the bench terminal.)
 - [ ] Is there a device-side tare command? None is listed; the app tares in software (net = gross − stored tare).
@@ -108,3 +108,4 @@ _Add dated entries: date, firmware (`IN_SOFTWARE` reply), command, exact reply, 
 - **2026-10-21** — First connection from a laptop over USB at 9600 7E1. `IN_NAME` came back as 7 unreadable characters (bytes outside ASCII). Likely causes: the parity bit leaking into bit 7 through the USB virtual COM port, or the USB side not using 7E1. The app now drops bit 7 of every received byte (NAMUR is 7-bit ASCII) and, if needed, also tries 8N1; the working setting is saved per unit. **Next:** reconnect and record which setting the app reports and the raw hex shown in the bench terminal.
 - **2026-10-22** — Balance: `IN_PV_90` gives no mass until the weighing key (G) is pressed on the unit and the reading settles. Readings are whole grams. App: mass shows a "Press the weighing key (G)…" prompt until readings arrive, retries every 3 s without logging errors, shows "settling…" until 3 readings agree within 1 g, and only allows Tare once settled.
 - **2026-10-22 (pm)** — Add device could not identify the RET. At every serial setting `IN_NAME` returned `ff ff ff ff ff ff ff 0d 0a`: correct CR LF framing, but seven 0xFF bytes for the name, i.e. the stored name is **blank (erased memory)**. Over USB the serial settings make no difference. Yesterday's "garbled name" was the same bytes. App now: recognises a blank name as a working NAMUR unit, also asks `IN_TYPE` and `IN_SOFTWARE`, and lets you connect by picking the model. Possible permanent fix: `OUT_NAME IKARET` (documented, max 6 characters, default IKARET) writes the name back; not done yet, the user decides.
+- **2026-10-22 (pm)** — `IN_TYPE` → `1` (`31 0d 0a`); `IN_SOFTWARE` → no reply within 1.2 s. The unit has to be connected by picking its model (or after `OUT_NAME IKARET`).
