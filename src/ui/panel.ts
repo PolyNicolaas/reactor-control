@@ -178,16 +178,19 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     el.classList.toggle('is-offline', !dev.connected);
     for (const r of shownReadings) {
       const valid = dev.isValid(r.key);
-      valueEls[r.key].textContent = valid ? fmt(dev.snapshot.values[r.key], decimalsFor(r.unit)) : '—';
-      tileEls[r.key].classList.toggle('invalid', !valid);
-      let note = valid ? '' : r.invalidNote ?? 'Not available';
-      if (valid && r.tareable) {
+      const dec = r.decimals ?? decimalsFor(r.unit);
+      const missing = valid && !!dev.missing[r.key];
+      valueEls[r.key].textContent = valid ? fmt(dev.snapshot.values[r.key], dec) : '—';
+      tileEls[r.key].classList.toggle('invalid', !valid || missing);
+      let note = !valid ? r.invalidNote ?? 'Not available' : missing ? r.optional?.missingNote ?? 'No reading' : '';
+      if (valid && !missing && r.tareable) {
         const t = dev.tares[r.key];
-        note = t === undefined ? 'Gross (no tare)' : `Net · tare ${fmt(t, decimalsFor(r.unit))} ${r.unit}`;
+        note = t === undefined ? 'Gross (no tare)' : `Net · tare ${fmt(t, dec)} ${r.unit}`;
+        if (!dev.isStable(r.key)) note += ' · settling…';
       }
       noteEls[r.key].textContent = note;
       if (r.tareable) {
-        tareBtns[r.key].disabled = !valid || dev.snapshot.gross[r.key] === undefined;
+        tareBtns[r.key].disabled = !valid || missing || dev.snapshot.gross[r.key] === undefined || !dev.isStable(r.key);
         clearBtns[r.key].hidden = dev.tares[r.key] === undefined;
       }
     }

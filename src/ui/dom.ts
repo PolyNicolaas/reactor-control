@@ -20,7 +20,7 @@ export function fmt(v: number | undefined, decimals: number): string {
 }
 
 export function decimalsFor(unit: string): number {
-  if (unit === 'rpm') return 0;
+  if (unit === 'rpm' || unit === 'g') return 0;
   if (unit === 'mm' || unit === 'mL') return 2;
   return 1;
 }

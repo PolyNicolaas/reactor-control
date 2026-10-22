@@ -22,8 +22,12 @@ export const retControlVisc: DeviceDriver = {
     // Built-in balance: 10–5000 g, accuracy ±(0.3 % + 2 g) (manual p. 35). The device only weighs
     // with heating and stirring off (p. 25), so readings at other times are shown and recorded as blank.
     // The app tares in software; the manual lists no tare command.
+    // Bench 2026-10-22: no mass until the weighing key (G) is pressed and the balance settles;
+    // whole grams only.
     {
-      key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, tareable: true,
+      key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, tareable: true, decimals: 0,
+      optional: { retryMs: 3000, missingNote: 'Press the weighing key (G) on the RET and wait for it to settle' },
+      stable: { span: 1, count: 3 },
       validWhen: (s) => !s.switches.heater && !s.switches.stirrer,
       invalidNote: 'Turn heating and stirring off to weigh',
     },

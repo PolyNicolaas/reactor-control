@@ -25,6 +25,10 @@ export class DeviceInstance {
   snapshot: DeviceSnapshot = { values: {}, gross: {}, setpoints: {}, switches: {} };
   /** Software tare offsets per tareable reading (device units). */
   tares: Record<string, number> = {};
+  /** Optional readings the device is not answering right now (see ReadingSpec.optional). */
+  missing: Record<string, boolean> = {};
+  private retryAt: Record<string, number> = {};
+  private recent: Record<string, number[]> = {};
   /** Setpoints sent but not yet confirmed by read-back. */
   pending: Record<string, number> = {};
   connected = false;
@@ -163,7 +167,34 @@ export class DeviceInstance {
     for (const r of this.driver.readings) {
       if (!this.polling) return;
       if (!r.cmd || (r.everyN && cycle % r.everyN !== 0)) continue;
-      const v = await read(r.cmd);
+      let v: number | undefined;
+      if (r.optional) {
+        // Not answering is expected until the user acts on the unit: no error, retry slowly.
+        if (!this.isValid(r.key) || Date.now() < (this.retryAt[r.key] ?? 0)) {
+          v = undefined;
+        } else {
+          try {
+            const reply = await this.transport.request(r.cmd, true);
+            v = reply === null ? undefined : parse(reply);
+          } catch {
+            v = undefined;
+          }
+          if (v === undefined) this.retryAt[r.key] = Date.now() + r.optional.retryMs;
+          if (v === undefined && !this.missing[r.key]) this.log('info', `${r.label}: no reading (${r.optional.missingNote})`);
+          if (v !== undefined && this.missing[r.key]) this.log('info', `${r.label}: reading available`);
+        }
+        this.missing[r.key] = v === undefined;
+      } else {
+        v = await read(r.cmd);
+      }
+      if (r.stable) {
+        const h = (this.recent[r.key] ??= []);
+        if (v === undefined) h.length = 0;
+        else {
+          h.push(v);
+          if (h.length > r.stable.count) h.shift();
+        }
+      }
       if (r.tareable) {
         this.snapshot.gross[r.key] = v;
         this.snapshot.values[r.key] = v === undefined ? undefined : v - (this.tares[r.key] ?? 0);
@@ -212,13 +243,22 @@ export class DeviceInstance {
     return !r?.validWhen || r.validWhen(this.snapshot);
   }
 
+  /** True when a reading with a `stable` rule has settled (always true for other readings). */
+  isStable(key: string): boolean {
+    const r = this.driver.readings.find((x) => x.key === key);
+    if (!r?.stable) return true;
+    const h = this.recent[key] ?? [];
+    return h.length >= r.stable.count && Math.max(...h) - Math.min(...h) <= r.stable.span;
+  }
+
   /** Set the tare to the current gross value. Throws with a readable message if it cannot. */
   tare(key: string): number {
     const r = this.driver.readings.find((x) => x.key === key && x.tareable);
     if (!r) throw new Error(`${key} cannot be tared`);
     if (!this.isValid(key)) throw new Error(r.invalidNote ?? `${r.label} is not available right now`);
     const g = this.snapshot.gross[key];
-    if (g === undefined) throw new Error(`No ${r.label.toLowerCase()} reading from the device yet`);
+    if (g === undefined) throw new Error(r.optional?.missingNote ?? `No ${r.label.toLowerCase()} reading from the device yet`);
+    if (!this.isStable(key)) throw new Error(`${r.label} is still settling. Tare when it is steady.`);
     this.tares[key] = g;
     this.snapshot.values[key] = 0;
     this.log('info', `${r.label} tared at ${g} ${r.unit} (gross)`);

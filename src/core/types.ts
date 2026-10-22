@@ -10,6 +10,16 @@ export interface ReadingSpec {
   cmd?: string;
   chart?: boolean;      // plot on the live chart
   primary?: boolean;    // shown large in the panel
+  /** Display decimals (default: 0 for rpm, 1 otherwise). */
+  decimals?: number;
+  /**
+   * The device may not answer this reading until the user does something on the unit (e.g. the RET
+   * balance needs its weighing key pressed). No reply is then normal: it is not logged as an error,
+   * is retried every retryMs, and missingNote tells the user what to do.
+   */
+  optional?: { retryMs: number; missingNote: string };
+  /** Reading counts as settled when the last `count` values are within `span` of each other. */
+  stable?: { span: number; count: number };
   /** Software tare: the app subtracts a stored offset and shows net values. */
   tareable?: boolean;
   /** Reading is only meaningful in some states (e.g. the RET balance needs heating and stirring off). */

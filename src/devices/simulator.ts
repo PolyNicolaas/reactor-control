@@ -17,6 +17,7 @@ export class SimTransport implements Transport {
   private last = performance.now();
   private viscosity = 1;
   private load = 412.6; // beaker + 250 mL water, g
+  private weighFrom = performance.now() + 5000; // stands in for pressing G on the unit
 
   constructor(readonly model: 'eurostar60' | 'retControlVisc') {
     if (model === 'eurostar60') {
@@ -58,6 +59,8 @@ export class SimTransport implements Transport {
     let m = /^IN_PV_(\d+)$/.exec(head);
     if (m) {
       const ch = Number(m[1]);
+      if (ch === 90 && (performance.now() < this.weighFrom || this.on[1] || this.on[4])) return null;
+      if (ch === 90) return `${this.pv[ch].toFixed(0)} ${ch}`;
       return ch in this.pv ? `${this.pv[ch].toFixed(1)} ${ch}` : null;
     }
     m = /^IN_SP_(\d+)$/.exec(head);
@@ -104,7 +107,9 @@ export class SimTransport implements Transport {
       this.pv[1] = approach(probe, this.pv[2], 60) + noise(0.1);
       if (this.on[4]) this.viscosity = Math.min(this.viscosity + dt * 0.001, 2);
       if (this.pv[1] > 40) this.load -= dt * (this.pv[1] - 40) * 0.0004; // evaporation
-      this.pv[90] = Math.round(this.load + noise(0.6));
+      const settle = Math.max(0, 1 - (performance.now() - this.weighFrom) / 4000); // wobbles for ~4 s
+      this.pv[90] = Math.round(this.load + noise(0.6) + settle * 30 * Math.sin(performance.now() / 300));
+      if (this.on[1] || this.on[4]) this.weighFrom = performance.now() + 5000; // leaves weighing mode
       this.pv[5] = this.on[4] ? (this.viscosity - 1) * 100 + noise(1) : 0;
     }
   }

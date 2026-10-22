@@ -41,7 +41,7 @@
 | `IN_NAME` | Title request | Identify on connect | manual |
 | `IN_SOFTWARE` | Software ID, date, version | Bench terminal | manual |
 | `IN_TYPE` | Lab device identification | — | manual |
-| `IN_PV_X` (1, 2, 3, 4, 5, 7, 80, 90) | Read current value | 1, 2, 3, 4, 5, 90 (mass) polled | manual |
+| `IN_PV_X` (1, 2, 3, 4, 5, 7, 80, 90) | Read current value | 1, 2, 3, 4, 5, 90 (mass) polled | 90: bench ✓ 2026-10-22 — only after the weighing key (G) is pressed and the balance settles; whole grams |
 | `IN_SP_X` (1, 2, 3, 4, 7, 8, 12, 42, 54, 55, 56) | Read set value | 1 and 4 read back | manual |
 | `OUT_SP_X n` (1, 2, 4, 7, 54, 55, 56) | Set target value | 1 (temperature), 4 (speed) | manual |
 | `OUT_SP_12@n` | Watchdog safety temperature, echoes value | — (planned) | manual |
@@ -63,8 +63,9 @@ The related RET control manual also lists on-device ramp commands (`RMP_*`) and 
 - [ ] Does the RET accept `OUT_SP_1` while the heater is off (the app sets first, then starts)?
 - [ ] On the RS 232 route (PC 1.1 + adapter), is RTS/CTS flow control needed? The app opens ports with flow control off; the USB route should not care.
 - [ ] What range and unit does the viscosity trend (`IN_PV_5`) report?
-- [ ] Weighing display resolution: how many decimals does `IN_PV_90` return?
-- [ ] Does `IN_PV_90` return a mass without pressing the weighing key (G) on the front panel first? If not, the app needs to tell the user to enter weighing mode.
+- [x] Weighing resolution: whole grams (no decimals). Bench 2026-10-22.
+- [x] `IN_PV_90` needs weighing mode: no mass until G is pressed and the balance settles. Bench 2026-10-22.
+- [ ] What exactly does `IN_PV_90` reply before G is pressed: nothing, an error code, or a number? (Check the raw hex in the bench terminal.)
 - [ ] Is there a device-side tare command? None is listed; the app tares in software (net = gross − stored tare).
 
 ## Bench log
@@ -72,3 +73,4 @@ The related RET control manual also lists on-device ramp commands (`RMP_*`) and 
 _Add dated entries: date, firmware (`IN_SOFTWARE` reply), command, exact reply, conclusion._
 
 - **2026-10-21** — First connection from a laptop over USB at 9600 7E1. `IN_NAME` came back as 7 unreadable characters (bytes outside ASCII). Likely causes: the parity bit leaking into bit 7 through the USB virtual COM port, or the USB side not using 7E1. The app now drops bit 7 of every received byte (NAMUR is 7-bit ASCII) and, if needed, also tries 8N1; the working setting is saved per unit. **Next:** reconnect and record which setting the app reports and the raw hex shown in the bench terminal.
+- **2026-10-22** — Balance: `IN_PV_90` gives no mass until the weighing key (G) is pressed on the unit and the reading settles. Readings are whole grams. App: mass shows a "Press the weighing key (G)…" prompt until readings arrive, retries every 3 s without logging errors, shows "settling…" until 3 readings agree within 1 g, and only allows Tare once settled.
