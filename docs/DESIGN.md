@@ -28,10 +28,16 @@ The goal, in order of importance:
 
 ### Planned (decided, not built)
 
-1. Enter or scan the **reaction ID** (a code linked to the ELN page) to start a reaction. Recording starts automatically and cannot be forgotten.
-2. Run by hand, or load a program and adjust it live. Every change is recorded with its source.
-3. **Stop** halts all units, then asks: **Resume** (restore the previous state, same reaction) or **Reaction complete**.
-4. On *Reaction complete* the app writes a **package** (data, as-run program, photos) to a drop folder, where an orchestrator (likely Luma Lab Connect) picks it up and files it in the ELN page.
+The station workflow (D23):
+
+1. Pick a named station (a Pi, e.g. `RC-03`), plug in the modules for this reaction (and the camera).
+2. Connect to the Pi from your laptop with VNC; the app is already open in the browser.
+3. Connect the modules in the app (Add device).
+4. Enter or scan the **reaction ID** (a code linked to the ELN page) to start a reaction. Recording starts automatically and cannot be forgotten.
+5. Run by hand, or load a program and adjust it live. Every change is recorded with its source.
+6. **Stop** halts all units, then asks: **Resume** (restore the previous state, same reaction) or **Reaction complete**.
+7. Throughout, data, metadata, photos and video are saved to the **host** automatically. On *Reaction complete* the host closes the **package** for the reaction (data, as-run program, photos, video), where Luma Lab Connect picks it up and files it in the ELN page.
+8. Unplug everything. The station keeps nothing; the host has the how and the what.
 
 ## 3. What is recorded and saved
 
@@ -57,6 +63,9 @@ Not recorded today: reaction ID, operator, the program/plan, the source of each 
 | Reaction package on *Reaction complete* | See [§7](#7-reaction-id-stop-and-the-package) |
 | Camera snapshots / time-lapse | See [§9](#9-camera) |
 | Device identity: model reply, firmware, serial where available | In the package manifest |
+| Station name (which Pi) | In every record and the manifest; set once per Pi (proposal: in the kiosk start URL, e.g. `?station=RC-03`, since a browser cannot read the Pi's hostname) |
+| Video and photos, streamed to the host during the reaction | See [§9](#9-camera) |
+| Everything above saved on the host as it happens, and kept there | D23; the Pi's browser storage is only a buffer for network drops |
 
 ## 4. How it works (short)
 
@@ -93,6 +102,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D20 | 2026-10-22 | **Planned direction:** host the app on department hardware inside NU's network, with a small server of our own (§12). **Needs to be defined and implemented.** GitHub Pages stays the host until then | A server we control lets feedback become issues without a third-party relay, keeps reaction data and feedback inside NU, and enables server-side records, packages for Luma, and NU login |
 | D21 | 2026-10-22 | In-app feedback (bugs, ideas, comments) is filed as issues automatically through our own server, not a third-party relay. Issues must not be public | Cleaner and private; feedback can contain reaction and lab details |
 | D22 | 2026-10-22 | The server is built and shipped as **one container** (Docker/Podman), multi-architecture (ARM for the Pi, x86 for a server). It runs on whatever host the department provides — most likely a Linux VM with a container runtime — or on the Pi as the interim. Data, secrets, certificate and backups live on the host, not in the container | Small service; identical code on Pi and department server; simple updates and rollback; matches how university IT usually hosts services |
+| D23 | 2026-10-22 | **Stations are ephemeral, named Pis reached by VNC.** Workflow: the Pi has a name; the user plugs in the modules for their reaction; connects to the Pi with VNC from their laptop; opens the app, connects the modules, runs the reaction. Data and metadata are saved automatically to the host (server) as the reaction runs and catalogued there; Luma Lab Connect picks the files up from the host and pushes them into the ELN. After the reaction everything can be unplugged: nothing needed is kept on the Pi | Easy for students and users to understand; any Pi serves any reaction; the record of how and what is never tied to one piece of hardware. Supersedes the Pi outbox as the main drop location (§7) once the server exists |
+| D24 | 2026-10-22 | Video and photos stream to the host **during** the reaction, not at the end | An ephemeral Pi can be unplugged at any time and has little storage |
 
 ## 6. Programs (draft)
 
@@ -125,7 +136,8 @@ Full draft: [program-format.md](program-format.md). Summary:
 | `photos/` | Camera images named by time in the run |
 
 **Drop location** (to decide with the orchestrator):
-- Preferred: an **outbox folder on the Pi** (e.g. `~/reactor-outbox`), chosen once in the browser (File System Access API). The app writes files, then `manifest.json`, then a `READY` marker, so a watcher never picks up a half-written package.
+- **With the server (D23, the target):** the host writes packages to its packages folder as the reaction runs and finalises them on *Reaction complete*; the Luma agent on the host watches that folder. The Pi only buffers.
+- Before the server exists: an **outbox folder on the Pi** (e.g. `~/reactor-outbox`), chosen once in the browser (File System Access API). The app writes files, then `manifest.json`, then a `READY` marker, so a watcher never picks up a half-written package.
 - Alternatives: POST to an orchestrator on the Pi (`http://localhost`); zip download as a fallback.
 
 ## 8. ELN and Luma Lab Connect (deferred — D17)
@@ -138,13 +150,28 @@ How our design fits: packages are self-describing folders (`manifest.json` + CSV
 
 To decide later: which ELN; the reaction ID format the ELN generates; whether the app can look up/validate an ID against the ELN; whether Lab Connect needs a specific folder layout or file naming; whether packages must also carry a human-readable report (PDF/HTML).
 
-## 9. Camera
+## 9. Camera and video
 
-Decided to add one (D18); model not chosen. Plan:
-- A USB (UVC) webcam works in Chromium on the Pi with no extra software; the browser can lock focus and exposure on many models, which matters for a fixed shot through a fume hood sash.
-- Features: live tile on the page; snapshot every N seconds during a reaction (time-lapse aligned with the chart); automatic photo at every change, at Stop and with each note; video opt-in only (files are large).
-- Photos go into the package under `photos/`, and are kept in browser storage during the reaction so a reload does not lose them.
-- The Pi's own ribbon-cable camera module is harder to use from a browser (it needs a bridge); keep it as an option if we add a local helper service later.
+Decided to add a camera (D18); model not chosen (options: USB webcams such as the Logitech C920 class or Arducam UVC cameras). The camera is treated like a module: plugged into the station Pi for the reaction and connected in the app.
+
+**What the station model (D23, D24) means for video**
+
+- **Stream to the host during the reaction.** The Pi is ephemeral and has a small SD card, so video and photos are uploaded in short chunks (a few seconds each) as they are recorded. If the network drops, chunks wait in browser storage and catch up. If the Pi is unplugged early, the host has everything up to the last chunk. *Reaction complete* shows "upload finished" before the station can be torn down.
+- **Recording happens on the Pi, not over VNC.** The browser records the camera directly; VNC only shows you a preview, which may look laggy, but the recording is unaffected.
+- **Record less, keep what matters** (sizes to confirm on our hardware):
+
+| Mode | Default | Approx. size | Use |
+| --- | --- | --- | --- |
+| Time-lapse: one photo every 10 s | On | ~0.1 GB per hour | Whole-reaction overview, aligned with the chart |
+| Event clips: keep a rolling ~60 s buffer; save it plus the next ~60 s at every change, note, prompt, Stop, or a "mark" button | On | Small, per event | "What did it look like when I added the reagent?" |
+| Continuous video, 720p | Off (opt-in) | ~0.5–1 GB per hour | Fast events, crystallisation, colour changes |
+| Continuous video, 1080p | Off | ~1–2 GB per hour | Only when needed |
+
+- **Pi load.** The Pi's browser encodes video in software while VNC also encodes the screen; a Pi 5 should manage 720p at 10–15 frames/s, a Pi 4 less. To test on the actual station before picking defaults.
+- **Synchronised with the data.** Every photo and video chunk carries its time in the reaction; the planned run view can show the frame at any point on the chart.
+- **Into the ELN as summary + link.** Large video should not be pushed into the ELN. The package carries the time-lapse, event clips' thumbnails and a contact sheet; full video stays on the host and the ELN entry links to it. Needs a **retention policy** on the host (e.g. keep full video N days unless the reaction is flagged) and storage sized for it.
+- **People in frame.** A camera in a lab can record people. Aim at the apparatus, and check NU/department policy on recording in labs (signage, consent, who can see video).
+- The Pi's ribbon-cable camera module is harder to use from a browser (it needs a bridge); USB cameras are the default.
 
 ## 10. Roadmap
 
@@ -224,7 +251,7 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 
 | Way | How | Scale | Notes |
 | --- | --- | --- | --- |
-| VNC / remote desktop (interim) | Raspberry Pi OS has a VNC server built in; connect from the laptop to each Pi's desktop | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
+| VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in; connect from the laptop to each Pi's desktop | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
 | Remote view through the server (planned) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
 
 **Safety rules for remote control (to define with lab policy):**
@@ -264,6 +291,9 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Who confirms prompts — needs operator identity (login)?
 - Pump direction: set by programs or only checked?
 - Camera model and mounting position.
+- Video defaults (time-lapse interval, event clip length, continuous resolution) after a load test on the station Pi.
+- Video retention on the host, storage size, and NU/department policy on recording in labs.
+- How each Pi gets its station name (kiosk URL parameter, or registered on the server).
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
 ## Keeping this document current
