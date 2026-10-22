@@ -55,6 +55,37 @@
 
 The related RET control manual also lists on-device ramp commands (`RMP_*`) and `STATUS_X`. They are **not** in this control-visc manual's table; check on the bench before relying on them.
 
+## Possible features
+
+Feature review 2026-10-22. Found outside our manual; not used by the app yet. Confidence: **IKA doc** = in an IKA manual · **code** = used in an open-source driver that ran on hardware · **claim** = issue/forum report. "2007 manual" = IKAMAG RET control-visc C, RETCV_0107 (Reg.-No. 4343-01).
+
+| Feature / command | What it does | Source | Confidence |
+| --- | --- | --- | --- |
+| Remote weighing / tare | **None exists.** No TARE, START_90 or OUT_SP_90 in any manual or driver. Weighing starts only with the G key; the app tares in software | 2019 manual p. 25; numat, Hein drivers | IKA doc |
+| `START_X`/`STOP_X` with X = 80, 90 | The 2019 text for these is copied word for word from the 2007 `START_16` ("old watchdog") row. Probably a documentation leftover, not real pH/weight commands. Do not use | [2007 manual](https://www.artisantg.com/info/IKA_RET_ControlVisc_Manual.pdf) vs 2019 manual | IKA doc (our inference) |
+| `RMP_START_X`, `RMP_STOP_X`, `RMP_PAUSE_X`, `RMP_CONT_X`, `RMP_RESET_X`, `RMP_IN_X`, `RMP_INX_y`, `RMP_OUT_X_yn` (end value, segment time hh:mm:ss), `RMP_LOOP_SET_X`, `RMP_LOOP_RESET_X` | On-device temperature (X=1) and speed (X=4) ramps; `RMP_START` needs `START_X` first. Would let the RET run ramps itself if the browser dies | 2007 manual | IKA doc (older model; untested on 2019 firmware) |
+| `STATUS` | Mode (1S/2S/3S = A/B/C), run state (S0 manual, S1/S2 auto), or a negative error | 2007 manual | IKA doc (older model) |
+| Error replies | -83 wrong parity · -84 unknown command · -85 wrong order · -86 invalid setpoint · -87 no memory. Useful: the app can treat -84 as "not supported" | 2007 manual | IKA doc |
+| `STATUS_1`, `STATUS_2`, `STATUS_4` | Reply starting `11` = active, `12` = inactive; `STATUS_2` returns `-90 2` (unexplained). Could confirm heater/stirrer state instead of trusting the last command | [numat/ika](https://github.com/numat/ika) | code |
+| Reply format | `value channel`, e.g. `25.3 1`; name/type replies as-is. Matches our parser | numat/ika, [Hein group ika](https://gitlab.com/heingroup/ika) | code |
+| "Eurostar control" on | The RET then **sends `IN_PV_4` itself** out of the port, which confuses a PC driver. Keep it off (already in Key facts) | 2019 manual; numat/ika | IKA doc + code |
+| `SET_MODE_n` (A, B, D) | Operating mode; listed for IKA Plate, C-MAG HS 7, RCT basic, **not** the RET | IKA Plate 11/2018, C-MAG HS 7 11/2018, RCT basic 05/2022 manuals | IKA doc (sibling models) |
+| X = 50, 52, 53 (`IN_SP`/`OUT_SP`) | Sensor offsets ±3.0 K; `IN_PV_8`. Dropped from the 2019 table | 2007 manual | IKA doc (older model) |
+| Viscosity trend reset | Front-panel Back key (F) only, resets to 100 %; trend needs a constant set speed. No remote command | 2019 manual | IKA doc |
+| pH calibration | Menu only (2/3-point, temperature sensor plugged in). No remote command | 2019 manual | IKA doc |
+| Watchdog practice | Set the watchdog time to ~20× the polling interval to avoid false Er 2; Er 2 shows only on the display, never over the interface; no documented way to cancel mode 1 | 2007 manual (labworldsoft tip); [labmcp-ika](https://pypi.org/project/labmcp-ika/) | IKA doc + simulator-only code |
+| Framing | 2019 English says max "10 characters" (other IKA manuals: 80, likely a typo); 2019 says RTS/CTS on RS-232, RCT basic says none | 2019 manual, RCT basic | IKA doc |
+| USB re-enumeration | An RCT digital (USB 0483:5740) dropped off USB and came back on a different port; the open handle had to be reopened | [GitHub issue](https://github.com/coport-uni/InnoCORESDL_Sungwoo/issues/41) | claim |
+
+**To try on the bench:** `STATUS`, `STATUS_1`, `STATUS_4`, `RMP_IN_1`. A `-84` reply means not supported on our firmware.
+
+### Other editions and related manuals
+
+- Same 2019 edition: [pcgroup.ru](https://pcgroup.ru/files/catalog/RET-control-visc-rukovodstvo.pdf) (identical file), [manualsdir](https://www.manualsdir.com/manuals/551081/ika-ret-control-visc.html?page=31). [manualslib 1658326](https://www.manualslib.com/manual/1658326/Ika-Ret-Control-Visc.html) may be an 04/2018 edition.
+- Older model: IKAMAG RET control-visc C, RETCV_0107 — [artisantg PDF](https://www.artisantg.com/info/IKA_RET_ControlVisc_Manual.pdf), [manualslib 1970851](https://www.manualslib.com/manual/1970851/Ika-Werke-Ikamag-Ret-Control-Visc.html).
+- Sibling hotplates: [IKA Plate 20000015643, 11/2018](https://shop.textalk.se/shop/ws72/72372/art12/156948912-a58526-20000015643_20014388a_A2_IKA_Plate_112018_web.pdf) · [C-MAG HS 7 control 20000015641, 11/2018](https://shop.textalk.se/shop/ws72/72372/art16/156948916-cc53a2-20000015641_20014381a_A2_C-MAG_HS_7_control_112018_web.pdf) · [RCT basic 20000018613, 05/2022](https://www.scientificlabs.co.uk/handlers/libraryFiles.ashx?filename=Manuals_S_STI2211.pdf).
+- IKA's official downloads page refused automated access; check it by hand: [ika.com RET control-visc downloads](https://www.ika.com/en/Products-LabEq/Magnetic-Stirrers-pg188/RET-control-visc-5020000/Downloads-cpdl.html).
+
 ## Questions
 
 - [ ] Reply format of `IN_PV_1` on our unit (value only, or value plus channel number?).

@@ -57,9 +57,11 @@
         }
       ],
       "watch": [
-        "https://www.ika.com/en/Products-LabEq/Magnetic-Stirrers-csp-188/RET-control-visc-cpdl-5020000/",
+        "https://www.ika.com/en/Products-LabEq/Magnetic-Stirrers-pg188/RET-control-visc-5020000/Downloads-cpdl.html",
         "search: RET control-visc operating instructions pdf",
-        "search: IKA hotplate NAMUR IN_PV_90 OR OUT_WD1 github"
+        "search: IKA hotplate NAMUR IN_PV_90 OR OUT_WD1 github",
+        "https://github.com/numat/ika",
+        "https://gitlab.com/heingroup/ika"
       ],
       "lastFeatureReview": "2026-10-22"
     },
