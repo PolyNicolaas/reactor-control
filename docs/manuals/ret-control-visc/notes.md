@@ -15,6 +15,7 @@
 | Flow control | **RS 232: hardware handshake RTS/CTS** (pin 7). Matters only on the RS 232 route; the USB route ignores it | p. 31 |
 | Line end | CR LF (hex 0D 0A) | p. 31 |
 | RS 232 cable | PC 1.1 cable (9-pin to PC) | p. 32 |
+| Weighing | Range 10–5000 g; display up to 2000 g; accuracy ±(0.3 % + 2 g); resolution not stated. Only works while heating and stirring are off. 2- or 3-point calibration, 200–5000 g | p. 25, 35 |
 | "Eurostar control" setting | Lets the RET talk directly to a EUROSTAR and stop heating if the EUROSTAR stops or its cable is lost. Keep it **off** when the app controls both units | p. 26 |
 
 ## Channel numbers (X in IN_PV_X, IN_SP_X, OUT_SP_X, START_X, STOP_X)
@@ -62,6 +63,7 @@ The related RET control manual also lists on-device ramp commands (`RMP_*`) and 
 - [ ] Does the RET accept `OUT_SP_1` while the heater is off (the app sets first, then starts)?
 - [ ] On the RS 232 route (PC 1.1 + adapter), is RTS/CTS flow control needed? The app opens ports with flow control off; the USB route should not care.
 - [ ] What range and unit does the viscosity trend (`IN_PV_5`) report?
+- [ ] Weighing display resolution: how many decimals does `IN_PV_90` return?
 
 ## Bench log
 
