@@ -28,7 +28,10 @@
       "watch": [
         "https://www.ika.com/en/Products-LabEq/Overhead-Stirrers-pg187/EUROSTAR-60-control-4440000/Downloads-cpdl.html",
         "search: EUROSTAR 60 control operating instructions pdf",
-        "search: EUROSTAR NAMUR IN_PV_5 OUT_SP_4 github"
+        "search: EUROSTAR NAMUR IN_PV_5 OUT_SP_4 github",
+        "https://github.com/numat/ika",
+        "https://gitlab.com/heingroup/ika",
+        "https://github.com/croningp/pylabware"
       ],
       "lastFeatureReview": "2026-10-22"
     },
