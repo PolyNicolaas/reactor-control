@@ -168,6 +168,7 @@ Add ideas here with a date; move them to the roadmap when decided.
 - 2026-10-22 — Suggest gates when saving a manual session as a program (e.g. a change made right after the probe reached 60 °C).
 - 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a program.
 - 2026-10-22 — Barcode/QR on the notebook page for the reaction ID.
+- 2026-10-22 — Station dashboard: all Pis and their reactions on one page, through the server (§12, Remote access).
 
 ## 12. Department server and feedback (planned — D20, D21; to be defined)
 
@@ -213,6 +214,26 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 - A host for the container (VM or server) and a container runtime, or permission to install one.
 - Backups of the mounted data folder.
 
+### Remote access and scale (proposal — to define)
+
+**Each Pi is a self-contained station**: its own browser, its own USB-connected modules, its own reaction. The server only hosts the app and receives data, so it is not the limit on how many Pis there can be — dozens to hundreds of Pis are a light load for one small server.
+
+**Modules per Pi:** each module is one USB serial port, polled about once a second at 9600 baud, and ports work independently. A Pi 4/5 has 4 USB ports; with a powered USB hub, 8–10 modules per Pi is comfortable. The practical limit is the screen (cards and chart lanes), not the hardware.
+
+**Controlling a Pi from a laptop:**
+
+| Way | How | Scale | Notes |
+| --- | --- | --- | --- |
+| VNC / remote desktop (interim) | Raspberry Pi OS has a VNC server built in; connect from the laptop to each Pi's desktop | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
+| Remote view through the server (planned) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
+
+**Safety rules for remote control (to define with lab policy):**
+- Stop on the Pi (and STOP ALL) always wins over anything remote.
+- Remote control requires login; remote view could be the default and control an explicit permission.
+- Remote changes are marked as remote in the record; heater-on and large temperature jumps still need confirmation.
+- If the Pi loses the server connection, the reaction continues locally under its last settings and the record keeps going on the Pi.
+- Whether reactions may run unattended at all is a lab-policy question, not an app setting.
+
 ### Interim option
 
 The Pi can run the same container for itself: pages served from `localhost` count as secure, so no certificate is needed, and the token stays on the Pi. Moving to the department server later is the same code on another machine.
@@ -225,6 +246,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Authentication: NU single sign-on or none at first.
 - Which data moves to the server first: feedback only, or reaction records and packages too.
 - Whether to start with the interim Pi-local server.
+- Remote access: VNC as the interim? Remote view/control through the server, and which safety rules apply.
 
 ## 13. Known limitations
 
