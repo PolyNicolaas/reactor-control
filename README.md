@@ -36,7 +36,7 @@ The first time, each unit needs one click in the port picker (Add device). After
 
 ## Device manuals
 
-`docs/manuals/` has one folder per device with the manual and a `notes.md` of annotations: key facts with page numbers, the command table with a verification status, open questions and a bench log. The PDFs are not committed (copyrighted; this repo is public) — run `./scripts/get-manuals.sh` to download them. See [docs/manuals/README.md](docs/manuals/README.md).
+[docs/MODULES.md](docs/MODULES.md) lists every supported and planned device (from `docs/modules.json`). `docs/manuals/` has one folder per device with the manual and a `notes.md` of annotations: key facts with page numbers, the command table with a verification status, open questions and a bench log. The PDFs are not committed (copyrighted; this repo is public) — run `node scripts/manuals.mjs fetch` to download them, and `node scripts/manuals.mjs check` to look for new editions. See [docs/manuals/README.md](docs/manuals/README.md).
 
 ## Adding a device model
 

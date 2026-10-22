@@ -23,6 +23,14 @@
 
 Status: `manual` = documented, untested · `bench ✓ <date>, fw <version>` = tried on our unit · `differs` = behaves differently; explain.
 
+## Possible features
+
+Found outside our manual; not used by the app yet.
+
+| Feature / command | What it does | Source | Confidence |
+| --- | --- | --- | --- |
+|  |  |  | IKA doc / code / claim |
+
 ## Questions
 
 - [ ]

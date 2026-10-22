@@ -2,21 +2,18 @@
 
 One folder per device model. Each holds the manufacturer's manual (PDF) and a `notes.md` with our annotations: the facts the app relies on, with page references, and what we found on the bench.
 
-| Device | Folder | Manual | Interface section |
-| --- | --- | --- | --- |
-| IKA EUROSTAR 60 control (also 100 control) | [eurostar-60-control](eurostar-60-control/notes.md) | Operating instructions 20000003965c (03/2018), 21 pages, EN | PDF p. 17 |
-| IKA RET control-visc | [ret-control-visc](ret-control-visc/notes.md) | Operating instructions 20000004159 (04/2019), 136 pages, multilingual (EN from p. 20) | PDF p. 31–33 |
-| Ismatec Reglo ICC (peristaltic pump) | [reglo-icc](reglo-icc/notes.md) | Operating manual 14-036-E rev. C, 36 pages, EN | PDF p. 17–33 |
+The list of modules, their manuals (edition, source URL, checksum) and their status lives in **[docs/modules.json](../modules.json)**; the readable table is **[docs/MODULES.md](../MODULES.md)**.
 
 ## Where the PDFs are
 
 The PDFs are the manufacturers' copyrighted documents, and this repo is public (needed for free GitHub Pages), so they are **not committed**. `.gitignore` excludes `docs/manuals/**/*.pdf`. Get them into the folders with:
 
 ```bash
-./scripts/get-manuals.sh
+node scripts/manuals.mjs fetch    # download missing manuals, verify SHA-256
+node scripts/manuals.mjs check    # find new editions, dead links, overdue feature reviews
 ```
 
-The script downloads each manual from the source listed in its `notes.md` and checks the SHA-256 so everyone annotates the same edition. If a link dies, download the manual from IKA and drop it in the folder under the same file name.
+The checksum makes sure everyone annotates the same edition. If a link dies, download the manual from the manufacturer, save it under the same file name, and update the URL in modules.json.
 
 ## How to annotate
 
@@ -29,8 +26,12 @@ Annotations go in `notes.md`, not in the PDF, so they are versioned, reviewable 
   - `differs` — our unit behaves differently from the manual; describe how
 - **Bench log.** Add dated entries at the bottom: what you tried, the exact reply, and what changed in the app.
 - **Questions.** Open items go in the Questions list so they are not lost.
+- **Possible features.** Commands or behaviours found outside our manual (other editions, sibling models, open-source drivers, forums), each with its source URL and confidence: `IKA doc` (in an IKA document), `code` (used in working open-source code), `claim` (forum or unverified). Move an item into the Commands table once it is tried on the bench.
 - If you want to mark up a PDF directly, save it beside the original as `<name>-annotated.pdf` (also not committed).
 
 ## Adding a device
 
-Copy `_template/` to a new folder named after the model (`kebab-case`), add the manual, fill in `notes.md`, add the manual's URL and checksum to `scripts/get-manuals.sh`, and add a row to the table above. Then write the driver in `src/devices/`.
+1. Add an entry to `docs/modules.json` (status `candidate` or `planned`), with the manual's URL, checksum (`sha256sum file.pdf`) and the `watch` sources to search.
+2. Copy `_template/` to `docs/manuals/<id>/`, run `node scripts/manuals.mjs fetch`, fill in `notes.md`.
+3. Write the driver in `src/devices/`, register it, set status to `driver-ready`, then `supported` after bench testing.
+4. Run `node scripts/manuals.mjs index` to refresh MODULES.md.

@@ -1,0 +1,98 @@
+{
+  "$comment": "Single source of truth for the devices (modules) Reactor Control supports or plans to, and the manuals behind each driver. Edit here, then run `node scripts/manuals.mjs index` to regenerate docs/MODULES.md. Statuses: supported (driver in the app, bench-tested), driver-ready (driver in the app, not yet bench-tested), planned (decided, no driver yet), candidate (being considered).",
+  "modules": [
+    {
+      "id": "eurostar-60-control",
+      "name": "IKA EUROSTAR 60 control",
+      "kind": "Overhead stirrer",
+      "status": "supported",
+      "driver": "src/devices/eurostar60.ts",
+      "notes": "docs/manuals/eurostar-60-control/notes.md",
+      "identifiesAs": "IKA ES 60",
+      "connection": "USB micro-B (cable in the box) or RS-232 via IKA PC 1.1",
+      "buy": "IKA / Fisher",
+      "documents": [
+        {
+          "title": "Operating instructions EUROSTAR 60 control / 100 control",
+          "docNo": "20000003965c",
+          "edition": "03/2018",
+          "language": "EN",
+          "pages": 21,
+          "interfacePages": "17",
+          "file": "EUROSTAR_60-100_control_operating_instructions_20000003965c.pdf",
+          "url": "https://cdn.abicart.com/shop/ws72/72372/art14/156950114-5574d5-20000003965c_EN_EUROSTAR_60_100_control_032018_web.pdf",
+          "sha256": "92d67aad98e480845f60ca9dcd26f13192530eb1bea18d26cc4e1b8cc4862d2d",
+          "retrieved": "2026-10-21"
+        }
+      ],
+      "watch": [
+        "https://www.ika.com/en/Products-LabEq/Overhead-Stirrers-pg187/EUROSTAR-60-control-4440000/Downloads-cpdl.html",
+        "search: EUROSTAR 60 control operating instructions pdf",
+        "search: EUROSTAR NAMUR IN_PV_5 OUT_SP_4 github"
+      ],
+      "lastFeatureReview": "2026-10-22"
+    },
+    {
+      "id": "ret-control-visc",
+      "name": "IKA RET control-visc",
+      "kind": "Hotplate stirrer with balance",
+      "status": "supported",
+      "driver": "src/devices/retControlVisc.ts",
+      "notes": "docs/manuals/ret-control-visc/notes.md",
+      "identifiesAs": "IKARET",
+      "connection": "USB micro-B (cable in the box) or RS-232 via IKA PC 1.1",
+      "buy": "IKA / Fisher",
+      "documents": [
+        {
+          "title": "Operating instructions RET control-visc",
+          "docNo": "20000004159",
+          "edition": "04/2019",
+          "language": "DE/EN/FR/… (EN from p. 20)",
+          "pages": 136,
+          "interfacePages": "31-33",
+          "file": "RET_control-visc_operating_instructions_20000004159.pdf",
+          "url": "https://assets.wolflabs.co.uk/AssetsStore/IKA_hotplates_RET-Control-Visc_manual.pdf",
+          "sha256": "1e1606aeb1921599d8b60672cba583c1bbe40f58ca44b63fa7744ff9d177219b",
+          "retrieved": "2026-10-21"
+        }
+      ],
+      "watch": [
+        "https://www.ika.com/en/Products-LabEq/Magnetic-Stirrers-csp-188/RET-control-visc-cpdl-5020000/",
+        "search: RET control-visc operating instructions pdf",
+        "search: IKA hotplate NAMUR IN_PV_90 OR OUT_WD1 github"
+      ],
+      "lastFeatureReview": "2026-10-22"
+    },
+    {
+      "id": "reglo-icc",
+      "name": "Ismatec Reglo ICC (4-channel, 12-roller)",
+      "kind": "Peristaltic pump",
+      "status": "driver-ready",
+      "driver": "src/devices/regloIcc.ts",
+      "notes": "docs/manuals/reglo-icc/notes.md",
+      "identifiesAs": "",
+      "connection": "USB Mini-B or RS-232 (DB9, daisy chain)",
+      "buy": "Fisher NC0916780 (Masterflex MFLX7800182); 3-stop tubing from Fisher, material per chemistry",
+      "documents": [
+        {
+          "title": "Reglo ICC operating manual",
+          "docNo": "14-036-E rev. C",
+          "edition": "rev. C",
+          "language": "EN",
+          "pages": 36,
+          "interfacePages": "17-33",
+          "file": "Reglo_ICC_operating_manual_14-036-E_revC.pdf",
+          "url": "https://github.com/numat/ismatec/raw/master/doc/14-036-e-ismatec-reglo-icc-english-revc.pdf",
+          "sha256": "c54f492a7ffee366d98f4f8d3d25b989614ecc51ad89e59a1d207420d5719536",
+          "retrieved": "2026-10-22"
+        }
+      ],
+      "watch": [
+        "https://www.masterflex.com (Reglo ICC downloads)",
+        "https://github.com/numat/ismatec",
+        "search: Reglo ICC RS232 command set manual pdf"
+      ],
+      "lastFeatureReview": "2026-10-22"
+    }
+  ]
+}
