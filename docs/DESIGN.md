@@ -2,11 +2,15 @@
 
 **Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22.
 
-Related: [README](../README.md) (setup, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/) (device notes)
+Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
+
+**Contents:** [1 What it is](#1-what-it-is) · [2 How it is used](#2-how-it-is-used) · [3 What is recorded and saved](#3-what-is-recorded-and-saved) · [4 How it works](#4-how-it-works-short) · [5 Decisions](#5-decisions) · [6 Programs](#6-programs-draft) · [7 Reaction ID, Stop, package](#7-reaction-id-stop-and-the-package) · [8 ELN and Luma](#8-eln-and-luma-lab-connect-deferred--d17) · [9 Camera and video](#9-camera-and-video) · [10 Roadmap](#10-roadmap) · [11 Ideas](#11-ideas-and-improvements) · [12 Server, feedback, remote access](#12-department-server-and-feedback-planned--d20-d21-to-be-defined) · [13 Known limitations](#13-known-limitations) · [14 Open questions](#14-open-questions)
 
 ## 1. What it is
 
-Reactor Control is a web page that runs lab reactor equipment — overhead stirrers, hotplates, pumps — from one screen, and records what happened. It runs in Chromium on a Raspberry Pi (or any computer) next to the equipment, talks to each unit over USB serial (Web Serial), and needs no server: it is hosted on GitHub Pages.
+Reactor Control is a web page that runs lab reactor equipment — overhead stirrers, hotplates, pumps — from one screen, and records what happened. It runs in Chromium on a Raspberry Pi (or any computer) next to the equipment and talks to each unit over USB serial (Web Serial).
+
+Today it is a static site on GitHub Pages with no server. The target (D20–D23) is a **station** model: named Pis that users reach by VNC, with the app and all records hosted on a department server inside NU's network, from where Luma Lab Connect files them into the electronic notebook.
 
 The goal, in order of importance:
 
@@ -61,10 +65,9 @@ Not recorded today: reaction ID, operator, the program/plan, the source of each 
 | Reaction session record, saved continuously in browser storage (IndexedDB) | Survives reloads and power cuts; recording starts with the reaction ID |
 | Source of every change (person, program step, device itself) | Basis for "what actually happened" and for as-run programs |
 | Reaction package on *Reaction complete* | See [§7](#7-reaction-id-stop-and-the-package) |
-| Camera snapshots / time-lapse | See [§9](#9-camera) |
 | Device identity: model reply, firmware, serial where available | In the package manifest |
 | Station name (which Pi) | In every record and the manifest; set once per Pi (proposal: in the kiosk start URL, e.g. `?station=RC-03`, since a browser cannot read the Pi's hostname) |
-| Video and photos, streamed to the host during the reaction | See [§9](#9-camera) |
+| Time-lapse and change clips (720p), streamed to the host during the reaction | See [§9](#9-camera-and-video) |
 | Everything above saved on the host as it happens, and kept there | D23; the Pi's browser storage is only a buffer for network drops |
 
 ## 4. How it works (short)
@@ -72,6 +75,7 @@ Not recorded today: reaction ID, operator, the program/plan, the source of each 
 - **Drivers describe devices; the core does the work.** A driver lists readings, setpoints, switches, stop commands and its wire protocol. Panels, polling, chart, recording and Stop all are generic. Adding a model is a new driver file (see README).
 - **Protocols:** NAMUR for IKA (9600 7E1, CR LF, unacknowledged writes) and Ismatec for the Reglo ICC (9600 8N1, CR, `*`/`#` acknowledgements). Add device tries both.
 - **One command in flight per port**; polling and user commands share the queue.
+- **Simulators and tests:** every driver has a simulated unit (usable from Add device) and tests in `src/test/` that run on every push (D27).
 - **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
 
 ### When a connection drops (D26)
@@ -121,6 +125,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D24 | 2026-10-22 | Video and photos stream to the host **during** the reaction, not at the end | An ephemeral Pi can be unplugged at any time and has little storage |
 | D25 | 2026-10-22 | **Video is limited:** time-lapse plus clips around changes, both at 720p; no continuous video. These settings are fixed for now — users cannot change them (user-adjustable settings are a future idea, §11) | Keeps storage and upload small; the clips capture the moments that matter |
 | D26 | 2026-10-22 | **A dropped connection never stops the record or the reaction.** Each link (VNC, host, module USB, the Pi itself) fails safe as described in §4 "When a connection drops"; nothing recorded is lost, gaps are marked | Stations are ephemeral and networked; failures must be expected |
+| D27 | 2026-10-22 | Every driver has a simulator and tests; pushes to `main` run the tests before deploying | Changes to shared code must not silently break a device; the pump can be developed before it arrives |
 
 ## 6. Programs (draft)
 
@@ -150,7 +155,7 @@ Full draft: [program-format.md](program-format.md). Summary:
 | `events.csv` | Every change with its source, notes, errors |
 | `run.json` | The complete record (machine-readable) |
 | `chart.png` | The run at a glance |
-| `photos/` | Camera images named by time in the run |
+| `media/` | Time-lapse frames and change clips (720p), named by time in the run; full video may stay on the host with a link (§9) |
 
 **Drop location** (to decide with the orchestrator):
 - **With the server (D23, the target):** the host writes packages to its packages folder as the reaction runs and finalises them on *Reaction complete*; the Luma agent on the host watches that folder. The Pi only buffers.
@@ -193,13 +198,13 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
 2. **Package and outbox**: as-run program from setpoints, outbox folder writer, zip fallback.
-3. **Camera**: live tile, time-lapse, photos on events.
+3. **Camera**: live tile, 720p time-lapse and change clips (D25), buffered on the Pi until a host exists.
 4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
 5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for programs; setup check with role matching.
 6. Program import (file, link, notebook helper), JSON Schema.
-7. **Department server** (D20, D22): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; feedback → private issues; then central records, packages for Luma, NU login.
+7. **Department server** (D20, D22, D23): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; streaming of records and media to the host; feedback → private issues; packages for Luma; station names; NU login.
 8. ELN/Luma integration.
-9. Safe-run watchdog on units that support it (RET `OUT_WD`), more devices.
+9. Safety when a station fails (§4): RET watchdog, pump doses in Volume mode; more devices.
 
 ## 11. Ideas and improvements
 
@@ -258,7 +263,7 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 - A host for the container (VM or server) and a container runtime, or permission to install one.
 - Backups of the mounted data folder.
 
-### Remote access and scale (proposal — to define)
+### Remote access and scale
 
 **Each Pi is a self-contained station**: its own browser, its own USB-connected modules, its own reaction. The server only hosts the app and receives data, so it is not the limit on how many Pis there can be — dozens to hundreds of Pis are a light load for one small server.
 
@@ -269,7 +274,7 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 | Way | How | Scale | Notes |
 | --- | --- | --- | --- |
 | VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in; connect from the laptop to each Pi's desktop | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
-| Remote view through the server (planned) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
+| Remote view through the server (idea, not decided) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
 
 **Safety rules for remote control (to define with lab policy):**
 - Stop on the Pi (and STOP ALL) always wins over anything remote.
@@ -290,11 +295,12 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Authentication: NU single sign-on or none at first.
 - Which data moves to the server first: feedback only, or reaction records and packages too.
 - Whether to start with the interim Pi-local server.
-- Remote access: VNC as the interim? Remote view/control through the server, and which safety rules apply.
+- Remote view/control through the server (beyond VNC): whether and when, and which safety rules apply.
 
 ## 13. Known limitations
 
 - Recordings live in memory until downloaded; a reload loses them (fixed by roadmap item 1).
+- No reaction ID, station name or operator in the record yet; the CSV files are named by date only.
 - Changes are logged as commands, not as "who changed what".
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).

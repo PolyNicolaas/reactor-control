@@ -1,4 +1,4 @@
-import type { SerialLink } from './types';
+import { NAMUR_SERIAL, type SerialLink } from './types';
 
 /**
  * How a device family talks on the wire. Drivers describe WHAT a device can do; a protocol
@@ -27,8 +27,8 @@ export interface Protocol {
   benchHint: string;
 }
 
-const SERIAL_7E1: SerialOptions = { baudRate: 9600, dataBits: 7, parity: 'even', stopBits: 1, flowControl: 'none' };
-const SERIAL_8N1: SerialOptions = { baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none' };
+const SERIAL_7E1: SerialOptions = NAMUR_SERIAL;
+const SERIAL_8N1: SerialOptions = { ...NAMUR_SERIAL, dataBits: 8, parity: 'none' };
 
 export const NAMUR: Protocol = {
   id: 'namur',

@@ -1,75 +1,90 @@
 # Reactor Control
 
-A browser control page for lab reactor devices over Web Serial. Supported now: the IKA **EUROSTAR 60 control** overhead stirrer, the IKA **RET control-visc** hotplate stirrer and the Ismatec **Reglo ICC** peristaltic pump (4 channels); other devices plug in as drivers. It is a static site hosted on GitHub Pages; no server is needed.
+A browser control page for lab reactor equipment over Web Serial, run in Chromium on a Raspberry Pi next to the equipment. One screen to control the units, a live chart, and a record of what happened.
 
-**Live app:** https://polynicolaas.github.io/reactor-control/
+**Live app:** https://polynicolaas.github.io/reactor-control/ (static site on GitHub Pages; no server needed today)
 
-**Design, decisions and what is recorded:** [docs/DESIGN.md](docs/DESIGN.md) (living document — update it with every code change).
+| Supported now | Kind | Status |
+| --- | --- | --- |
+| IKA EUROSTAR 60 control | Overhead stirrer | Bench-tested |
+| IKA RET control-visc | Hotplate stirrer with balance | Bench-tested |
+| Ismatec Reglo ICC (4 channels) | Peristaltic pump | Driver ready, not yet bench-tested |
+
+Full list and status: [docs/MODULES.md](docs/MODULES.md).
+
+## Documents
+
+| Document | What it is |
+| --- | --- |
+| [docs/DESIGN.md](docs/DESIGN.md) | **Start here.** How the app is used, what is recorded and saved, decisions, roadmap, ideas, open questions. A living document: updated with every code change |
+| [docs/program-format.md](docs/program-format.md) | Draft format for reaction programs (roles, steps, live adjustments) |
+| [docs/MODULES.md](docs/MODULES.md) | Supported and planned devices (generated from `docs/modules.json`) |
+| [docs/manuals/](docs/manuals/README.md) | One folder per device: manual (downloaded, not committed) and annotated `notes.md` |
+| [examples/programs/](examples/programs/) | Example program file |
+| [CLAUDE.md](CLAUDE.md) | Rules for changing the code (keep the design doc current) |
 
 ## What works now
 
-- Add, remove and drag-to-reorder devices (horizontal cards) on a control page at any time (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
-- One generic panel per device, built from its driver: live readouts, setpoints with device read-back confirmation, on/off switches, a plain status word.
-- **Stop all** sends the stop commands to every connected unit.
-- Live chart at the top: one lane per device on a shared time axis, filters for time range (5 min–1 h), lanes and channels.
-- Recording with notes; download as CSV (samples: actual, setpoint read-back and switch state per channel; events: commands sent, errors, notes).
-- Bench terminal per device for sending raw NAMUR commands — use it to check the commands marked *verify* in the design.
-- RET balance: mass readout with software **Tare** / Clear (net, gross and tare all recorded); blanked while heating or stirring, when the balance cannot weigh.
-- Per-setpoint user limits; confirmation before turning a heater on or raising temperature by more than 50 °C.
+- Add, remove and reorder units on the control page (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
+- One card per unit, built from its driver: live readings, setpoints with read-back from the unit, on/off switches, a status word. Pump channels each get their own block and can be named.
+- **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
+- Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
+- Recording with notes; download as CSV (samples and events). See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
+- RET balance with software tare. Per-setpoint user limits; confirmation before heating or large temperature jumps.
+- Bench terminal per unit for raw commands (IKA NAMUR or Ismatec), with replies in text and hex.
 
 ## Requirements
 
-- Chrome or Edge on a computer, or Chromium on the Raspberry Pi (Web Serial is Chromium-only and needs HTTPS, which GitHub Pages provides).
-- The browser must run on the machine the IKA units are plugged into.
-- On Linux / Raspberry Pi: the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in).
-- On the RET control-visc: turn **off** the "Eurostar" option in the system settings, otherwise the heater switches off when the serial cable is unplugged.
+- Chrome or Edge on a computer, or Chromium on the Raspberry Pi (Web Serial is Chromium-only and needs HTTPS).
+- The browser must run on the computer the units are plugged into.
+- Linux / Raspberry Pi: the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in).
+- RET control-visc: turn **off** the "Eurostar" option in its system settings, otherwise the heater switches off when the serial cable is unplugged.
+- Reglo ICC: set each channel's tubing inner diameter and rotation direction on the pump. The app sets flow (mL/min) and start/stop.
 
-Serial settings used: IKA 9600 baud 7E1, commands end with CR LF (NAMUR); Reglo ICC 9600 baud 8N1, commands end with CR. Add device tries both and picks the one the unit answers.
+Serial settings are found automatically (IKA: 9600 7E1, CR LF; Reglo ICC: 9600 8N1, CR).
 
-On the Reglo ICC: set each channel's tubing inner diameter and rotation direction on the pump (the app sets flow rate mode and rate in mL/min, not direction). "Flow" on the card is the set rate while the channel runs; "Dispensed" is the app's running total, an estimate until the channel is calibrated.
-
-## Raspberry Pi kiosk
+Raspberry Pi kiosk:
 
 ```bash
 chromium-browser --kiosk https://polynicolaas.github.io/reactor-control/
 ```
 
-The first time, each unit needs one click in the port picker (Add device). After that the page reconnects to allowed ports on its own.
-
-## Device manuals
-
-[docs/MODULES.md](docs/MODULES.md) lists every supported and planned device (from `docs/modules.json`). `docs/manuals/` has one folder per device with the manual and a `notes.md` of annotations: key facts with page numbers, the command table with a verification status, open questions and a bench log. The PDFs are not committed (copyrighted; this repo is public) — run `node scripts/manuals.mjs fetch` to download them, and `node scripts/manuals.mjs check` to look for new editions. See [docs/manuals/README.md](docs/manuals/README.md).
-
-## Adding a device model
-
-1. Add a folder under `docs/manuals/` from `_template/` with the manual and notes.
-2. Copy `src/devices/eurostar60.ts` (IKA/NAMUR) or `src/devices/regloIcc.ts` (other protocols, channels, derived values) to a new file and fill in the readings, setpoints, switches and stop commands from the device manual. A new wire protocol goes in `src/core/protocol.ts`.
-3. Add it to `src/devices/registry.ts`.
-
-The panel, polling, chart, Stop all and recording pick it up automatically.
+Each unit needs one click in the port picker the first time (Add device); after that the page reconnects to allowed ports on its own.
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # local dev server (Web Serial works on localhost)
-npm run build    # type-check and build to dist/
+npm run dev            # local dev server (Web Serial works on localhost)
+npm test               # unit tests (drivers against the simulators, protocol formats)
+npm run build          # type-check and build to dist/
+npm run manuals:fetch  # download device manuals into docs/manuals/ (not committed)
+npm run manuals:check  # look for new manual editions, dead links, overdue feature reviews
+npm run manuals:index  # regenerate docs/MODULES.md from docs/modules.json
 ```
 
-Pushing to `main` builds and deploys to GitHub Pages via `.github/workflows/deploy.yml`.
+Pushing to `main` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`). Every behaviour change also updates [docs/DESIGN.md](docs/DESIGN.md) in the same commit.
 
-## Code map
+### Adding a device model
+
+1. Add it to `docs/modules.json` and create `docs/manuals/<id>/` from `_template/` ([how](docs/manuals/README.md#adding-a-device)).
+2. Write the driver in `src/devices/`: copy `eurostar60.ts` (IKA/NAMUR) or `regloIcc.ts` (other protocols, channels, derived values). A new wire protocol goes in `src/core/protocol.ts`. Add a simulator so it can be tested without hardware.
+3. Register it in `src/devices/registry.ts` and add a test in `src/test/`.
+
+Panels, polling, chart, STOP ALL and recording pick it up automatically.
+
+### Code map
 
 | Path | Job |
 | --- | --- |
-| `src/core/types.ts` | Driver interface, NAMUR serial settings, reply parser |
+| `src/main.ts` | Page layout, recording controls, wiring |
+| `src/core/types.ts` | Driver interface (readings, setpoints, switches, groups, derived values) |
 | `src/core/protocol.ts` | Wire protocols: NAMUR (IKA) and Ismatec — framing, acknowledgements, identify, probe settings |
-| `src/core/serialTransport.ts` | Web Serial: one command in flight, CR LF lines and one-character status replies, timeouts |
-| `src/core/device.ts` | One device instance: polling, setpoints, switches, stop, read-back |
-| `src/core/app.ts` | Devices on the page, saved config, 1 s sampler, recording |
-| `src/devices/*` | Drivers, registry, simulator |
-| `src/ui/*` | Panels, add device, chart, terminal, CSV export |
-
-## Not yet built
-
-See the roadmap in [docs/DESIGN.md](docs/DESIGN.md#10-roadmap): reaction ID and always-on recording, Stop with Resume / Reaction complete, reaction packages for the ELN, camera, programs.
+| `src/core/serialTransport.ts` | Web Serial: one command in flight, line and one-character replies, timeouts |
+| `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings |
+| `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release |
+| `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
+| `src/devices/` | Drivers, registry, simulators (`simulator.ts` for IKA, `regloSim.ts` for the pump) |
+| `src/ui/` | Cards, add device, chart, bench terminal, CSV export |
+| `src/test/` | Tests (vitest) |
+| `scripts/manuals.mjs` | Manual library: fetch, check, index |

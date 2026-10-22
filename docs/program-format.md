@@ -1,6 +1,6 @@
 # Reaction programs — design proposal
 
-Status: **draft for discussion** (2026-10-22). Nothing here is built yet. Priorities and decisions live in [DESIGN.md](DESIGN.md); per D10 the record of what happened comes first and programs are optional. Example: [`examples/programs/dropwise-addition.reactor.json`](../examples/programs/dropwise-addition.reactor.json).
+Status: **draft for discussion** (last reviewed 2026-10-22). Nothing here is built yet. Decisions, priorities and the build order live in [DESIGN.md](DESIGN.md): the record of what happened comes first and programs are optional (D10); every reaction runs under a reaction ID on a station (D14, D23). Example: [`examples/programs/dropwise-addition.reactor.json`](../examples/programs/dropwise-addition.reactor.json).
 
 ## Goals
 
@@ -124,7 +124,7 @@ Rules that keep this safe and predictable:
 
 ## Manual sessions → programs
 
-The control page always records a **session** in the background (separate from the explicit "Start recording" CSV). From any session or run record:
+Every reaction is recorded from the moment its reaction ID is entered, whether or not a program is used (D14, D23). From any reaction record:
 
 **Save as program** produces a `.reactor.json` with:
 
@@ -165,14 +165,9 @@ p.save("dropwise.reactor.json")
 
 Run records export the other way (JSON + the existing CSV), so a notebook can load a run, compare it with the plan, tweak and save a new program.
 
-## Build order (proposal)
+## Build order
 
-1. Driver `kind` declarations and the capability matcher; Setup check dialog.
-2. Run record (background session log with sources) and **Save as program** for manual sessions — useful immediately, before the engine exists.
-3. Run engine: `set`, `hold`, `ramp`, `until`, `wait`, `dose`, prompts; lanes view with plan vs. actual.
-4. Live adjustments: overrides, pause/skip/extend, manual hand-off, future-step editing.
-5. JSON Schema, `?program=` links, the Python helper.
-6. Safe-run watchdog (RET), IndexedDB storage of runs, then login and sync.
+See the roadmap in [DESIGN.md §10](DESIGN.md#10-roadmap): the reaction record and package come first; the run engine, setup check and live plan editing follow.
 
 ## Open questions
 

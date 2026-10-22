@@ -9,8 +9,8 @@ The list of modules, their manuals (edition, source URL, checksum) and their sta
 The PDFs are the manufacturers' copyrighted documents, and this repo is public (needed for free GitHub Pages), so they are **not committed**. `.gitignore` excludes `docs/manuals/**/*.pdf`. Get them into the folders with:
 
 ```bash
-node scripts/manuals.mjs fetch    # download missing manuals, verify SHA-256
-node scripts/manuals.mjs check    # find new editions, dead links, overdue feature reviews
+npm run manuals:fetch    # download missing manuals, verify SHA-256
+npm run manuals:check    # find new editions, dead links, overdue feature reviews
 ```
 
 The checksum makes sure everyone annotates the same edition. If a link dies, download the manual from the manufacturer, save it under the same file name, and update the URL in modules.json.
@@ -32,6 +32,6 @@ Annotations go in `notes.md`, not in the PDF, so they are versioned, reviewable 
 ## Adding a device
 
 1. Add an entry to `docs/modules.json` (status `candidate` or `planned`), with the manual's URL, checksum (`sha256sum file.pdf`) and the `watch` sources to search.
-2. Copy `_template/` to `docs/manuals/<id>/`, run `node scripts/manuals.mjs fetch`, fill in `notes.md`.
-3. Write the driver in `src/devices/`, register it, set status to `driver-ready`, then `supported` after bench testing.
-4. Run `node scripts/manuals.mjs index` to refresh MODULES.md.
+2. Copy `_template/` to `docs/manuals/<id>/`, run `npm run manuals:fetch`, fill in `notes.md`.
+3. Write the driver and a simulator in `src/devices/`, register it, add a test in `src/test/`, set status to `driver-ready`, then `supported` after bench testing.
+4. Run `npm run manuals:index` to refresh MODULES.md.

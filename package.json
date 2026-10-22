@@ -1,24 +1,27 @@
 {
   "name": "reactor-control",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "Browser control page for lab reactor devices (IKA, Ismatec) over Web Serial",
+  "author": "Nicolaas",
+  "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/w3c-web-serial": "^1.0.8",
-    "typescript": "^5.9.3",
-    "vite": "^5.4.21"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "manuals:fetch": "node scripts/manuals.mjs fetch",
+    "manuals:check": "node scripts/manuals.mjs check",
+    "manuals:index": "node scripts/manuals.mjs index"
   },
   "dependencies": {
     "uplot": "^1.6.32"
   },
-  "type": "module"
+  "devDependencies": {
+    "@types/w3c-web-serial": "^1.0.8",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
 }

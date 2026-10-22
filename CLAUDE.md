@@ -8,4 +8,5 @@
   - the "Last reviewed" date at the top
 - Keep `README.md` (setup, code map) and `docs/MODULES.md` (generated from `docs/modules.json`) in step too.
 - Device facts come from the manual: cite the page in `docs/manuals/<module>/notes.md`.
-- Run `npm run build` before pushing; `main` deploys to GitHub Pages.
+- New drivers get a simulator and a test in `src/test/`.
+- Run `npm test` and `npm run build` before pushing; `main` runs the tests and deploys to GitHub Pages.
