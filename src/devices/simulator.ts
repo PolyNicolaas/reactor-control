@@ -59,8 +59,9 @@ export class SimTransport implements Transport {
     let m = /^IN_PV_(\d+)$/.exec(head);
     if (m) {
       const ch = Number(m[1]);
-      if (ch === 90 && (performance.now() < this.weighFrom || this.on[1] || this.on[4])) return null;
-      if (ch === 90) return `${this.pv[ch].toFixed(0)} ${ch}`;
+      // Like our RET: "0.0 90" outside weighing mode, the mass with one decimal in weighing mode.
+      if (ch === 90 && (performance.now() < this.weighFrom || this.on[1] || this.on[4])) return '0.0 90';
+      if (ch === 90) return `${this.pv[ch].toFixed(1)} ${ch}`;
       return ch in this.pv ? `${this.pv[ch].toFixed(1)} ${ch}` : null;
     }
     m = /^IN_SP_(\d+)$/.exec(head);

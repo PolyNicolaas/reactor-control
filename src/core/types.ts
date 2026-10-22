@@ -17,7 +17,12 @@ export interface ReadingSpec {
    * balance needs its weighing key pressed). No reply is then normal: it is not logged as an error,
    * is retried every retryMs, and missingNote tells the user what to do.
    */
-  optional?: { retryMs: number; missingNote: string };
+  optional?: {
+    retryMs: number;
+    missingNote: string;
+    /** The device answers exactly 0 when the reading is unavailable (RET balance outside weighing mode). */
+    zeroMeansMissing?: boolean;
+  };
   /** Reading counts as settled when the last `count` values are within `span` of each other. */
   stable?: { span: number; count: number };
   /** Software tare: the app subtracts a stored offset and shows net values. */

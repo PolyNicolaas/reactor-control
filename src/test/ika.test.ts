@@ -52,3 +52,16 @@ describe('IKA drivers against the simulator', () => {
     await dev.disconnect(true);
   });
 });
+
+describe('RET balance', () => {
+  it('reads 0.0 outside weighing mode as "not weighing", not as 0 g', async () => {
+    const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    await dev.connect();
+    await wait(400);
+    // The simulator answers "0.0 90" for its first 5 s, like the RET before G is pressed.
+    expect(dev.missing.mass).toBe(true);
+    expect(dev.snapshot.values.mass).toBeUndefined();
+    expect(() => dev.tare('mass')).toThrow(/weighing key/);
+    await dev.disconnect(false);
+  });
+});

@@ -98,9 +98,8 @@ Feature review 2026-10-22. Found outside our manual; not used by the app yet. Co
 - [x] `IN_PV_90` needs weighing mode: no mass until G is pressed and the balance settles. Bench 2026-10-22.
 - [x] `IN_TYPE` returns `1`; `IN_SOFTWARE` gives no reply. Neither identifies the unit. Bench 2026-10-22.
 - [ ] Does `OUT_NAME IKARET` restore the name, and does it survive a power cycle?
-- [ ] Does `IN_PV_90` answer `0.0` outside weighing mode (indistinguishable from an empty plate), or only in weighing mode?
+- [x] `IN_PV_90` answers `0.0 90` outside weighing mode and the mass in weighing mode (`122.0 90` with a load, after G). The app treats exactly 0 as "not weighing". Bench 2026-10-22.
 - [x] `IN_PV_80` = 7.55 was with **no pH electrode connected**: the RET returns a plausible-looking number without an electrode, so the value alone cannot show whether one is fitted. If pH is added to the app, the user must say an electrode is fitted. Bench 2026-10-22.
-- [ ] What exactly does `IN_PV_90` reply before G is pressed: nothing, an error code, or a number? (Check the raw hex in the bench terminal.)
 - [ ] Is there a device-side tare command? None is listed; the app tares in software (net = gross − stored tare).
 
 ## Bench log
@@ -112,3 +111,4 @@ _Add dated entries: date, firmware (`IN_SOFTWARE` reply), command, exact reply, 
 - **2026-10-22 (pm)** — Add device could not identify the RET. At every serial setting `IN_NAME` returned `ff ff ff ff ff ff ff 0d 0a`: correct CR LF framing, but seven 0xFF bytes for the name, i.e. the stored name is **blank (erased memory)**. Over USB the serial settings make no difference. Yesterday's "garbled name" was the same bytes. App now: recognises a blank name as a working NAMUR unit, also asks `IN_TYPE` and `IN_SOFTWARE`, and lets you connect by picking the model. Possible permanent fix: `OUT_NAME IKARET` (documented, max 6 characters, default IKARET) writes the name back; not done yet, the user decides.
 - **2026-10-22 (pm)** — `IN_TYPE` → `1` (`31 0d 0a`); `IN_SOFTWARE` → no reply within 1.2 s. The unit has to be connected by picking its model (or after `OUT_NAME IKARET`).
 - **2026-10-22 15:13** — Bench terminal, heater and stirrer off. Reply format `value channel` + CR LF confirmed. `IN_NAME` → `ff`×7 (blank). `IN_PV_5` → `0.0 5`. `IN_PV_80` → `7.55 80` (pH, **no electrode connected**). `IN_PV_90` → `0.0 90` (one decimal on the wire although the display shows whole grams; weighing mode state at the time not recorded). `IN_SP_1` → `0.0 1`, `IN_SP_4` → `0.0 4`. `IN_SOFTWARE` → no reply.
+- **2026-10-22 15:15** — Load on the plate. Before G: `IN_PV_90` → `0.0 90`. After G and settling: `122.0 90` (`31 32 32 2e 30 20 39 30 0d 0a`). App changed: 0 = not weighing (prompt shown).

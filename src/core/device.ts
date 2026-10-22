@@ -176,6 +176,7 @@ export class DeviceInstance {
           try {
             const reply = await this.transport.request(r.cmd, true);
             v = reply === null ? undefined : parse(reply);
+            if (v === 0 && r.optional.zeroMeansMissing) v = undefined;
           } catch {
             v = undefined;
           }

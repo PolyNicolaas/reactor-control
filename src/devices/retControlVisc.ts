@@ -26,7 +26,10 @@ export const retControlVisc: DeviceDriver = {
     // whole grams only.
     {
       key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, tareable: true, decimals: 0,
-      optional: { retryMs: 3000, missingNote: 'Press the weighing key (G) on the RET and wait for it to settle' },
+      // Bench 2026-10-22: outside weighing mode IN_PV_90 answers "0.0 90"; in weighing mode the mass
+      // ("122.0 90"). So exactly 0 is treated as "not weighing". An empty plate in weighing mode also
+      // reads 0 and shows the prompt; that is accepted (tare with the vessel on the plate).
+      optional: { retryMs: 3000, missingNote: 'Press the weighing key (G) on the RET and wait for it to settle', zeroMeansMissing: true },
       stable: { span: 1, count: 3 },
       validWhen: (s) => !s.switches.heater && !s.switches.stirrer,
       invalidNote: 'Turn heating and stirring off to weigh',
