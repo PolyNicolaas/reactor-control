@@ -2,7 +2,7 @@ import { NAMUR_SERIAL, type DeviceDriver } from '../core/types';
 
 // IKA RET control-visc — hotplate stirrer (0–340 °C plate, external PT100 probe).
 // Source: operating instructions 20000004159, p. 31–33 (see docs/manuals/ret-control-visc/notes.md).
-// pH (IN_PV_80) and weight (IN_PV_90) are not polled; they need the pH electrode / weighing in use.
+// pH (IN_PV_80) is not polled; it needs the pH electrode fitted.
 // Keep the device's "Eurostar control" setting OFF (manual p. 26): with it on, the RET itself
 // talks to a EUROSTAR and stops heating when that link drops.
 export const retControlVisc: DeviceDriver = {
@@ -18,6 +18,14 @@ export const retControlVisc: DeviceDriver = {
     { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true },
     { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true },
     { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3' },
+    // Built-in balance: 10–5000 g, accuracy ±(0.3 % + 2 g) (manual p. 35). The device only weighs
+    // with heating and stirring off (p. 25), so readings at other times are shown and recorded as blank.
+    // The app tares in software; the manual lists no tare command.
+    {
+      key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, tareable: true,
+      validWhen: (s) => !s.switches.heater && !s.switches.stirrer,
+      invalidNote: 'Turn heating and stirring off to weigh',
+    },
   ],
   setpoints: [
     {

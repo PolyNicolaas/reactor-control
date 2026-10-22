@@ -18,6 +18,7 @@ export interface SavedDevice {
   usbProductId?: number;
   limits?: Record<string, number | undefined>;
   link?: SerialLink;
+  tares?: Record<string, number>;
 }
 
 export interface PageConfig {
@@ -30,7 +31,7 @@ export interface Column {
   deviceId: string;
   label: string;        // "Hotplate probe"
   unit: string;
-  kind: 'actual' | 'setpoint' | 'switch';
+  kind: 'actual' | 'setpoint' | 'switch' | 'gross';
 }
 
 export interface Row {
@@ -86,11 +87,13 @@ export class App {
   }
 
   /** Create a device instance, connect it and add it to the page. */
-  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink }): Promise<DeviceInstance> {
+  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number> }): Promise<DeviceInstance> {
     const driver = getDriver(opts.model);
     const dev = new DeviceInstance(opts.id ?? this.newId(driver.model), driver, opts.label, opts.color ?? this.nextColor(), opts.transport);
     if (opts.limits) dev.limits = { ...opts.limits };
     dev.link = opts.link;
+    if (opts.tares) dev.tares = { ...opts.tares };
+    dev.changed.on(() => this.saveSoon());
     dev.changed.on(() => this.changed.emit());
     dev.events.on((e) => {
       // Keep writes, errors and info; skip the once-a-second poll traffic (IN_* and replies).
@@ -147,6 +150,17 @@ export class App {
 
   // ----- persistence of the page -----
 
+  private saveTimer?: number;
+  private lastTares = '';
+  /** Save when tares change (cheap check; changed fires every poll). */
+  private saveSoon(): void {
+    const t = JSON.stringify(this.devices.map((d) => d.tares));
+    if (t === this.lastTares) return;
+    this.lastTares = t;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => this.save(), 300);
+  }
+
   save(): void {
     this.config.devices = this.devices.map((d) => {
       const info = d.transport instanceof SerialTransport ? d.transport.port.getInfo() : {};
@@ -160,6 +174,7 @@ export class App {
         usbProductId: info.usbProductId,
         limits: d.limits,
         link: d.link,
+        tares: Object.keys(d.tares).length ? d.tares : undefined,
       };
     });
     this.config.devices.push(...this.missing);
@@ -219,7 +234,7 @@ export class App {
       }
       if (transport) {
         this.missing = this.missing.filter((m) => m.id !== s.id);
-        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link });
+        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares });
       } else {
         missing.push(s);
       }
@@ -237,7 +252,11 @@ export class App {
     const cols: Column[] = [];
     for (const d of this.devices) {
       for (const r of d.driver.readings) {
-        cols.push({ key: `${d.id}.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()}`, unit: r.unit, kind: 'actual' });
+        cols.push({ key: `${d.id}.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()}${r.tareable ? ' net' : ''}`, unit: r.unit, kind: 'actual' });
+        if (r.tareable) {
+          cols.push({ key: `${d.id}.gross.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()} gross`, unit: r.unit, kind: 'gross' });
+          cols.push({ key: `${d.id}.tare.${r.key}`, deviceId: d.id, label: `${d.label} ${r.label.toLowerCase()} tare`, unit: r.unit, kind: 'gross' });
+        }
       }
       for (const sp of d.driver.setpoints) {
         cols.push({ key: `${d.id}.sp.${sp.key}`, deviceId: d.id, label: `${d.label} ${sp.label.toLowerCase()} setpoint`, unit: sp.unit, kind: 'setpoint' });
@@ -253,7 +272,12 @@ export class App {
     const row: Row = { t: Date.now(), v: {} };
     for (const d of this.devices) {
       if (!d.connected) continue;
-      for (const [k, v] of Object.entries(d.snapshot.values)) row.v[`${d.id}.${k}`] = v;
+      // A reading outside its valid state (e.g. mass while heating) is recorded as blank.
+      for (const [k, v] of Object.entries(d.snapshot.values)) row.v[`${d.id}.${k}`] = d.isValid(k) ? v : undefined;
+      for (const [k, v] of Object.entries(d.snapshot.gross)) {
+        row.v[`${d.id}.gross.${k}`] = d.isValid(k) ? v : undefined;
+        row.v[`${d.id}.tare.${k}`] = d.tares[k] ?? 0;
+      }
       for (const [k, v] of Object.entries(d.snapshot.setpoints)) row.v[`${d.id}.sp.${k}`] = v;
       for (const [k, v] of Object.entries(d.snapshot.switches)) row.v[`${d.id}.sw.${k}`] = v ? 1 : 0;
     }

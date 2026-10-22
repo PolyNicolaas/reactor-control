@@ -7,6 +7,12 @@ export interface ReadingSpec {
   cmd: string;          // NAMUR read command, e.g. "IN_PV_4"
   chart?: boolean;      // plot on the live chart
   primary?: boolean;    // shown large in the panel
+  /** Software tare: the app subtracts a stored offset and shows net values. */
+  tareable?: boolean;
+  /** Reading is only meaningful in some states (e.g. the RET balance needs heating and stirring off). */
+  validWhen?: (s: DeviceSnapshot) => boolean;
+  /** Shown instead of the value when validWhen is false. */
+  invalidNote?: string;
 }
 
 export interface SetpointSpec {
@@ -34,7 +40,8 @@ export interface SwitchSpec {
 export type DeviceStatus = 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'No reply' | 'Disconnected' | 'Connecting';
 
 export interface DeviceSnapshot {
-  values: Record<string, number | undefined>;      // reading key -> value
+  values: Record<string, number | undefined>;      // reading key -> value (net, after tare)
+  gross: Record<string, number | undefined>;       // tareable reading key -> value as the device reports it
   setpoints: Record<string, number | undefined>;   // setpoint key -> value read back from device
   switches: Record<string, boolean>;               // switch key -> last commanded state
 }

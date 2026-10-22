@@ -16,7 +16,7 @@ const STATE_KEY = 'reactor-control.chart';
 // Fixed axis widths + right padding keep every lane's plot area aligned on the shared time axis.
 const AXIS_W = 72;
 // Smallest y span per unit, so sensor noise is not blown up to fill the lane.
-const MIN_SPAN: Record<string, number> = { '°C': 10, rpm: 100, Ncm: 5 };
+const MIN_SPAN: Record<string, number> = { '°C': 10, rpm: 100, Ncm: 5, g: 10 };
 
 function minSpan(min: number | null, max: number | null, span: number): [number, number] {
   if (min == null || max == null || !Number.isFinite(min) || !Number.isFinite(max)) return [0, span];

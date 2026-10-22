@@ -16,13 +16,14 @@ export class SimTransport implements Transport {
   private on: Record<number, boolean> = {};
   private last = performance.now();
   private viscosity = 1;
+  private load = 412.6; // beaker + 250 mL water, g
 
   constructor(readonly model: 'eurostar60' | 'retControlVisc') {
     if (model === 'eurostar60') {
       this.pv = { 3: 22, 4: 0, 5: 2 };
       this.sp = { 4: 300 };
     } else {
-      this.pv = { 1: 22, 2: 22, 3: 380, 4: 0, 5: 0 };
+      this.pv = { 1: 22, 2: 22, 3: 380, 4: 0, 5: 0, 90: 0 };
       this.sp = { 1: 50, 4: 400 };
     }
   }
@@ -102,6 +103,8 @@ export class SimTransport implements Transport {
       this.pv[2] = plateTarget > plate ? Math.min(next, plate + dt * 0.25) : next;
       this.pv[1] = approach(probe, this.pv[2], 60) + noise(0.1);
       if (this.on[4]) this.viscosity = Math.min(this.viscosity + dt * 0.001, 2);
+      if (this.pv[1] > 40) this.load -= dt * (this.pv[1] - 40) * 0.0004; // evaporation
+      this.pv[90] = Math.round(this.load + noise(0.6));
       this.pv[5] = this.on[4] ? (this.viscosity - 1) * 100 + noise(1) : 0;
     }
   }

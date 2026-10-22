@@ -9,6 +9,10 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const statusEl = h('span', { class: 'status' });
   const titleEl = h('span', { class: 'dev-label' }, dev.label);
   const valueEls: Record<string, HTMLElement> = {};
+  const tileEls: Record<string, HTMLElement> = {};
+  const noteEls: Record<string, HTMLElement> = {};
+  const tareBtns: Record<string, HTMLButtonElement> = {};
+  const clearBtns: Record<string, HTMLButtonElement> = {};
   const spReadEls: Record<string, HTMLElement> = {};
   const spInputs: Record<string, HTMLInputElement> = {};
   const swEls: Record<string, HTMLButtonElement> = {};
@@ -41,7 +45,32 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     ...d.readings.map((r) => {
       const v = h('span', { class: 'tile-value' }, '—');
       valueEls[r.key] = v;
-      return h('div', { class: `tile${r.primary ? ' primary' : ''}` }, h('span', { class: 'tile-label' }, `${r.label} (${r.unit})`), v);
+      const note = h('span', { class: 'tile-note' });
+      noteEls[r.key] = note;
+      let tools: HTMLElement | null = null;
+      if (r.tareable) {
+        const tare = h('button', { class: 'tare', type: 'button', title: `Zero the ${r.label.toLowerCase()} reading at its current value` }, 'Tare') as HTMLButtonElement;
+        tare.addEventListener('click', () => {
+          try {
+            const g = dev.tare(r.key);
+            app.note(`${dev.label}: ${r.label.toLowerCase()} tared at ${g} ${r.unit} gross`);
+            toast(`${r.label} tared (${g} ${r.unit} on the plate)`);
+          } catch (e) {
+            toast((e as Error).message, 'error');
+          }
+        });
+        const clear = h('button', { class: 'tare clear', type: 'button', title: 'Remove the tare and show the gross value' }, 'Clear') as HTMLButtonElement;
+        clear.addEventListener('click', () => {
+          dev.clearTare(r.key);
+          app.note(`${dev.label}: ${r.label.toLowerCase()} tare cleared`);
+        });
+        tareBtns[r.key] = tare;
+        clearBtns[r.key] = clear;
+        tools = h('div', { class: 'tile-tools' }, tare, clear);
+      }
+      const tile = h('div', { class: `tile${r.primary ? ' primary' : ''}${r.tareable ? ' tareable' : ''}` }, h('span', { class: 'tile-label' }, r.unit === 'trend' ? r.label : `${r.label} (${r.unit})`), v, note, tools);
+      tileEls[r.key] = tile;
+      return tile;
     }),
   );
 
@@ -122,7 +151,21 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     statusEl.dataset.state = st.toLowerCase().replace(/\s+/g, '-');
     titleEl.textContent = dev.label;
     el.classList.toggle('is-offline', !dev.connected);
-    for (const r of d.readings) valueEls[r.key].textContent = fmt(dev.snapshot.values[r.key], decimalsFor(r.unit));
+    for (const r of d.readings) {
+      const valid = dev.isValid(r.key);
+      valueEls[r.key].textContent = valid ? fmt(dev.snapshot.values[r.key], decimalsFor(r.unit)) : '—';
+      tileEls[r.key].classList.toggle('invalid', !valid);
+      let note = valid ? '' : r.invalidNote ?? 'Not available';
+      if (valid && r.tareable) {
+        const t = dev.tares[r.key];
+        note = t === undefined ? 'Gross (no tare)' : `Net · tare ${fmt(t, decimalsFor(r.unit))} ${r.unit}`;
+      }
+      noteEls[r.key].textContent = note;
+      if (r.tareable) {
+        tareBtns[r.key].disabled = !valid || dev.snapshot.gross[r.key] === undefined;
+        clearBtns[r.key].hidden = dev.tares[r.key] === undefined;
+      }
+    }
     for (const sp of d.setpoints) {
       const rb = dev.snapshot.setpoints[sp.key];
       const pend = dev.pending[sp.key];

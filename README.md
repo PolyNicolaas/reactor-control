@@ -12,6 +12,7 @@ A browser control page for lab reactor devices over Web Serial. Supported now: t
 - Live chart at the top: one lane per device on a shared time axis, filters for time range (5 min–1 h), lanes and channels.
 - Recording with notes; download as CSV (samples: actual, setpoint read-back and switch state per channel; events: commands sent, errors, notes).
 - Bench terminal per device for sending raw NAMUR commands — use it to check the commands marked *verify* in the design.
+- RET balance: mass readout with software **Tare** / Clear (net, gross and tare all recorded); blanked while heating or stirring, when the balance cannot weigh.
 - Per-setpoint user limits; confirmation before turning a heater on or raising temperature by more than 50 °C.
 
 ## Requirements

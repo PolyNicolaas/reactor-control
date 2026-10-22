@@ -21,7 +21,9 @@ export class DeviceInstance {
   readonly changed = new Emitter<DeviceInstance>();
   readonly events = new Emitter<DeviceEvent>();
 
-  snapshot: DeviceSnapshot = { values: {}, setpoints: {}, switches: {} };
+  snapshot: DeviceSnapshot = { values: {}, gross: {}, setpoints: {}, switches: {} };
+  /** Software tare offsets per tareable reading (device units). */
+  tares: Record<string, number> = {};
   /** Setpoints sent but not yet confirmed by read-back. */
   pending: Record<string, number> = {};
   connected = false;
@@ -125,7 +127,13 @@ export class DeviceInstance {
     };
     for (const r of this.driver.readings) {
       if (!this.polling) return;
-      this.snapshot.values[r.key] = await read(r.cmd);
+      const v = await read(r.cmd);
+      if (r.tareable) {
+        this.snapshot.gross[r.key] = v;
+        this.snapshot.values[r.key] = v === undefined ? undefined : v - (this.tares[r.key] ?? 0);
+      } else {
+        this.snapshot.values[r.key] = v;
+      }
     }
     for (const sp of this.driver.setpoints) {
       if (!sp.readCmd || !this.polling) continue;
@@ -136,6 +144,35 @@ export class DeviceInstance {
     }
     this.failures = ok === 0 && fail > 0 ? this.failures + 1 : 0;
     this.responding = this.failures < 2;
+  }
+
+  /** True when a reading can be trusted right now (see ReadingSpec.validWhen). */
+  isValid(key: string): boolean {
+    const r = this.driver.readings.find((x) => x.key === key);
+    return !r?.validWhen || r.validWhen(this.snapshot);
+  }
+
+  /** Set the tare to the current gross value. Throws with a readable message if it cannot. */
+  tare(key: string): number {
+    const r = this.driver.readings.find((x) => x.key === key && x.tareable);
+    if (!r) throw new Error(`${key} cannot be tared`);
+    if (!this.isValid(key)) throw new Error(r.invalidNote ?? `${r.label} is not available right now`);
+    const g = this.snapshot.gross[key];
+    if (g === undefined) throw new Error(`No ${r.label.toLowerCase()} reading from the device yet`);
+    this.tares[key] = g;
+    this.snapshot.values[key] = 0;
+    this.log('info', `${r.label} tared at ${g} ${r.unit} (gross)`);
+    this.changed.emit(this);
+    return g;
+  }
+
+  clearTare(key: string): void {
+    const r = this.driver.readings.find((x) => x.key === key);
+    delete this.tares[key];
+    const g = this.snapshot.gross[key];
+    this.snapshot.values[key] = g;
+    this.log('info', `${r?.label ?? key} tare cleared`);
+    this.changed.emit(this);
   }
 
   /** Clamp to driver range and user limit. Throws with a readable message if out of range. */

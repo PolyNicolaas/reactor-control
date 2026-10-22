@@ -41,7 +41,7 @@
 | `IN_NAME` | Title request | Identify on connect | manual |
 | `IN_SOFTWARE` | Software ID, date, version | Bench terminal | manual |
 | `IN_TYPE` | Lab device identification | — | manual |
-| `IN_PV_X` (1, 2, 3, 4, 5, 7, 80, 90) | Read current value | 1, 2, 3, 4, 5 polled | manual |
+| `IN_PV_X` (1, 2, 3, 4, 5, 7, 80, 90) | Read current value | 1, 2, 3, 4, 5, 90 (mass) polled | manual |
 | `IN_SP_X` (1, 2, 3, 4, 7, 8, 12, 42, 54, 55, 56) | Read set value | 1 and 4 read back | manual |
 | `OUT_SP_X n` (1, 2, 4, 7, 54, 55, 56) | Set target value | 1 (temperature), 4 (speed) | manual |
 | `OUT_SP_12@n` | Watchdog safety temperature, echoes value | — (planned) | manual |
@@ -64,6 +64,8 @@ The related RET control manual also lists on-device ramp commands (`RMP_*`) and 
 - [ ] On the RS 232 route (PC 1.1 + adapter), is RTS/CTS flow control needed? The app opens ports with flow control off; the USB route should not care.
 - [ ] What range and unit does the viscosity trend (`IN_PV_5`) report?
 - [ ] Weighing display resolution: how many decimals does `IN_PV_90` return?
+- [ ] Does `IN_PV_90` return a mass without pressing the weighing key (G) on the front panel first? If not, the app needs to tell the user to enter weighing mode.
+- [ ] Is there a device-side tare command? None is listed; the app tares in software (net = gross − stored tare).
 
 ## Bench log
 

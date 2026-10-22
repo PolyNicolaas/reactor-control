@@ -145,6 +145,14 @@ main { padding: 20px; display: grid; gap: 20px; }
 .tile-label { font-size: 13px; color: var(--ink-2); }
 .tile-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tile.primary .tile-value { font-size: 32px; }
+.tile-note { font-size: 12px; color: var(--ink-2); min-height: 1em; }
+.tile-note:empty { display: none; }
+.tile.invalid .tile-value { color: var(--ink-2); }
+.tile.invalid .tile-note { color: var(--warn); font-weight: 600; }
+.tile-tools { display: flex; gap: 6px; margin-top: 6px; }
+.tile-tools .tare { min-height: 36px; padding: 0 12px; font-weight: 600; }
+.tile-tools .tare.clear { font-weight: 400; color: var(--ink-2); }
+.tile.tareable { grid-column: span 2; }
 
 .setpoints { display: grid; gap: 10px; }
 .sp-row { display: grid; grid-template-columns: 96px 1fr; gap: 2px 10px; align-items: center; }
