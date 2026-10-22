@@ -74,6 +74,21 @@ Not recorded today: reaction ID, operator, the program/plan, the source of each 
 - **One command in flight per port**; polling and user commands share the queue.
 - **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
 
+### When a connection drops (D26)
+
+| Link that drops | Today | Planned |
+| --- | --- | --- |
+| **VNC** (laptop ↔ Pi) | Nothing changes: the browser on the Pi keeps running the reaction and recording. Reconnect and carry on | Same. Closing the *browser* (not VNC) asks for confirmation |
+| **Network** (Pi ↔ host) | Not applicable yet (no host) | Control and recording continue on the Pi. Data, events, photos and clips queue in browser storage; a banner shows "Host offline — saving on this station (N MB queued)"; uploads resume by themselves. *Reaction complete* waits until the queue is empty. The host notices a silent station (heartbeat) and can alert. If the Pi's storage runs low: data and events are never dropped; clips first, then every other time-lapse frame, and the record says so |
+| **Module USB** (cable pulled, unit off) | The card shows *Disconnected* with **Reconnect**; the log says "Connection lost"; other units carry on; that unit's samples are blank until it is back | Same, plus a clear alarm and the gap marked in the record. **The unit itself keeps its last settings** unless it has a watchdog (below) |
+| **The Pi** (power, crash, browser closed) | The recording in memory is lost (§13). Units keep running at their last settings | The record is in browser storage up to the last second and on the host up to the last upload. On restart the app reopens the reaction: "Reaction NV-012-045 interrupted at 10:42 — Resume or Reaction complete", and reconnects the units it knows |
+
+**What the units do on their own when the Pi is gone** — the real safety question:
+- RET control-visc: has a watchdog (`OUT_WD1@m`: heating and stirring off if no command for *m* seconds; `OUT_WD2@m`: fall back to safety temperature and speed). Documented, not yet used or bench-tested (roadmap item 9).
+- EUROSTAR 60: no watchdog; keeps stirring.
+- Reglo ICC: keeps pumping at the last rate. Mitigation idea: run doses in the pump's own Volume mode so the pump stops by itself after the set volume (§11).
+- Whether a reaction may continue unattended after a Pi failure is a lab-policy question (§14).
+
 ## 5. Decisions
 
 Newest last. Each has a date and a short reason. Change a decision by adding a new entry that supersedes it; do not delete old ones.
@@ -104,6 +119,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D22 | 2026-10-22 | The server is built and shipped as **one container** (Docker/Podman), multi-architecture (ARM for the Pi, x86 for a server). It runs on whatever host the department provides — most likely a Linux VM with a container runtime — or on the Pi as the interim. Data, secrets, certificate and backups live on the host, not in the container | Small service; identical code on Pi and department server; simple updates and rollback; matches how university IT usually hosts services |
 | D23 | 2026-10-22 | **Stations are ephemeral, named Pis reached by VNC.** Workflow: the Pi has a name; the user plugs in the modules for their reaction; connects to the Pi with VNC from their laptop; opens the app, connects the modules, runs the reaction. Data and metadata are saved automatically to the host (server) as the reaction runs and catalogued there; Luma Lab Connect picks the files up from the host and pushes them into the ELN. After the reaction everything can be unplugged: nothing needed is kept on the Pi | Easy for students and users to understand; any Pi serves any reaction; the record of how and what is never tied to one piece of hardware. Supersedes the Pi outbox as the main drop location (§7) once the server exists |
 | D24 | 2026-10-22 | Video and photos stream to the host **during** the reaction, not at the end | An ephemeral Pi can be unplugged at any time and has little storage |
+| D25 | 2026-10-22 | **Video is limited:** time-lapse plus clips around changes, both at 720p; no continuous video. These settings are fixed for now — users cannot change them (user-adjustable settings are a future idea, §11) | Keeps storage and upload small; the clips capture the moments that matter |
+| D26 | 2026-10-22 | **A dropped connection never stops the record or the reaction.** Each link (VNC, host, module USB, the Pi itself) fails safe as described in §4 "When a connection drops"; nothing recorded is lost, gaps are marked | Stations are ephemeral and networked; failures must be expected |
 
 ## 6. Programs (draft)
 
@@ -158,14 +175,13 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 
 - **Stream to the host during the reaction.** The Pi is ephemeral and has a small SD card, so video and photos are uploaded in short chunks (a few seconds each) as they are recorded. If the network drops, chunks wait in browser storage and catch up. If the Pi is unplugged early, the host has everything up to the last chunk. *Reaction complete* shows "upload finished" before the station can be torn down.
 - **Recording happens on the Pi, not over VNC.** The browser records the camera directly; VNC only shows you a preview, which may look laggy, but the recording is unaffected.
-- **Record less, keep what matters** (sizes to confirm on our hardware):
+- **Record less, keep what matters** (D25; sizes to confirm on our hardware; users cannot change these settings for now):
 
 | Mode | Default | Approx. size | Use |
 | --- | --- | --- | --- |
-| Time-lapse: one photo every 10 s | On | ~0.1 GB per hour | Whole-reaction overview, aligned with the chart |
-| Event clips: keep a rolling ~60 s buffer; save it plus the next ~60 s at every change, note, prompt, Stop, or a "mark" button | On | Small, per event | "What did it look like when I added the reagent?" |
-| Continuous video, 720p | Off (opt-in) | ~0.5–1 GB per hour | Fast events, crystallisation, colour changes |
-| Continuous video, 1080p | Off | ~1–2 GB per hour | Only when needed |
+| Time-lapse: one 720p photo every 10 s | Always on, fixed | ~0.1 GB per hour | Whole-reaction overview, aligned with the chart |
+| Event clips at 720p: keep a rolling ~60 s buffer; save it plus the next ~60 s at every settings change, note, prompt, Stop, or a "mark" button | Always on, fixed | Small, per event | "What did it look like when I added the reagent?" |
+| Continuous video | Not offered (D25) | ~0.5–1 GB per hour at 720p | Reconsider later if fast events need it |
 
 - **Pi load.** The Pi's browser encodes video in software while VNC also encodes the screen; a Pi 5 should manage 720p at 10–15 frames/s, a Pi 4 less. To test on the actual station before picking defaults.
 - **Synchronised with the data.** Every photo and video chunk carries its time in the reaction; the planned run view can show the frame at any point on the chart.
@@ -191,7 +207,8 @@ Add ideas here with a date; move them to the roadmap when decided.
 
 - 2026-10-22 — Pump: per-channel calibration from the app (`xY`/`xV`), so "Dispensed" becomes trustworthy.
 - 2026-10-22 — Pump: set rotation direction per channel from programs, or check it like tubing.
-- 2026-10-22 — Pump: dose a set volume (pump's Volume mode) as a program step.
+- 2026-10-22 — Pump: dose a set volume (pump's Volume mode) as a program step; also a safety measure, since the pump then stops by itself if the Pi fails (§4).
+- 2026-10-22 — User-adjustable video settings (time-lapse interval, clip length, continuous video) — not for now (D25).
 - 2026-10-22 — Suggest gates when saving a manual session as a program (e.g. a change made right after the probe reached 60 °C).
 - 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a program.
 - 2026-10-22 — Barcode/QR on the notebook page for the reaction ID.
@@ -291,7 +308,9 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Who confirms prompts — needs operator identity (login)?
 - Pump direction: set by programs or only checked?
 - Camera model and mounting position.
-- Video defaults (time-lapse interval, event clip length, continuous resolution) after a load test on the station Pi.
+- Exact time-lapse interval and clip length after a load test on the station Pi (720p fixed, D25).
+- Which units must use a watchdog, and what a reaction should do if its Pi fails (lab policy).
+- How long a station may run disconnected from the host, and how much local storage to allow for the queue.
 - Video retention on the host, storage size, and NU/department policy on recording in labs.
 - How each Pi gets its station name (kiosk URL parameter, or registered on the server).
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
