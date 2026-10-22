@@ -1,0 +1,57 @@
+{
+  "format": "reactor-program/0.1",
+  "name": "Dropwise addition at 60 °C",
+  "description": "Heat and stir, wait for the probe, add the substrate by hand, then dose reagent A slowly and hold.",
+  "author": "Nicolaas",
+  "created": "2026-10-22",
+
+  "equipment": {
+    "heater": {
+      "kind": "hotplate",
+      "needs": { "setpoints": { "temp": { "max": ">=80" } }, "readings": ["probe"] },
+      "prefer": ["retControlVisc"]
+    },
+    "stirrer": {
+      "kind": "overhead-stirrer",
+      "needs": { "setpoints": { "speed": { "min": "<=200", "max": ">=600" } } },
+      "prefer": ["eurostar60", "eurostar100"]
+    },
+    "reagentA": {
+      "kind": "pump-channel",
+      "needs": { "setpoints": { "flow": { "max": ">=1" } } },
+      "check": { "tubing": 1.02 },
+      "label": "Reagent A (1 M NaOH)"
+    }
+  },
+
+  "limits": {
+    "heater.temp": { "max": 80 },
+    "stirrer.speed": { "max": 800 },
+    "reagentA.flow": { "max": 1 }
+  },
+
+  "lanes": {
+    "heater": [
+      { "do": "set", "temp": 60, "on": true },
+      { "do": "until", "reading": "probe", "op": ">=", "value": 58, "timeout": "45 min", "id": "hot" },
+      { "do": "hold", "for": "until:reagentA.done+30 min" },
+      { "do": "set", "on": false }
+    ],
+    "stirrer": [
+      { "do": "set", "speed": 200, "on": true },
+      { "do": "ramp", "speed": 400, "over": "5 min" },
+      { "do": "hold", "for": "until:heater.end" },
+      { "do": "set", "on": false }
+    ],
+    "reagentA": [
+      { "do": "wait", "for": "until:charged" },
+      { "do": "dose", "volume": 10, "rate": 0.5, "id": "done" }
+    ]
+  },
+
+  "prompts": [
+    { "after": "heater.hot", "id": "charged", "text": "Add 5.0 g substrate through the side neck, then confirm.", "record": ["mass added (g)"] }
+  ],
+
+  "onAbort": ["reagentA.stop", "heater.off", "stirrer.keep"]
+}

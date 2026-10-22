@@ -70,4 +70,4 @@ Pushing to `main` builds and deploys to GitHub Pages via `.github/workflows/depl
 
 ## Not yet built (see the design doc)
 
-Reaction programs (lanes, ramps, gates), safe-run watchdog, IndexedDB run storage, program import from notebooks, login and synced runs.
+Reaction programs (lanes, ramps, gates — proposal in [docs/program-format.md](docs/program-format.md)), safe-run watchdog, IndexedDB run storage, program import from notebooks, login and synced runs.
