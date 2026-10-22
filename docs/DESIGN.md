@@ -92,6 +92,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D19 | 2026-10-22 | This design document is living and is updated with every code change; decisions and improvement ideas are tracked here | Keep the design true to the code |
 | D20 | 2026-10-22 | **Planned direction:** host the app on department hardware inside NU's network, with a small server of our own (§12). **Needs to be defined and implemented.** GitHub Pages stays the host until then | A server we control lets feedback become issues without a third-party relay, keeps reaction data and feedback inside NU, and enables server-side records, packages for Luma, and NU login |
 | D21 | 2026-10-22 | In-app feedback (bugs, ideas, comments) is filed as issues automatically through our own server, not a third-party relay. Issues must not be public | Cleaner and private; feedback can contain reaction and lab details |
+| D22 | 2026-10-22 | The server is built and shipped as **one container** (Docker/Podman), multi-architecture (ARM for the Pi, x86 for a server). It runs on whatever host the department provides — most likely a Linux VM with a container runtime — or on the Pi as the interim. Data, secrets, certificate and backups live on the host, not in the container | Small service; identical code on Pi and department server; simple updates and rollback; matches how university IT usually hosts services |
 
 ## 6. Programs (draft)
 
@@ -133,7 +134,7 @@ What we know (public Dotmatics material, 2026-10-22):
 - Luma Lab Connect uploads files automatically from Windows or Linux machines or S3 buckets, parses them with built-in or custom data models (JSON and CSV sources are supported), and can link results to ELN experiments.
 - Not confirmed: how its Linux agent watches folders, how results are matched to an experiment (ID in the file name? in the content?), and which ELNs it writes to.
 
-How our design fits: the Pi is a Linux machine with an outbox folder of self-describing packages (`manifest.json` + CSV/JSON) carrying the reaction ID. A Lab Connect agent on the Pi (or an S3 sync of the outbox) would pick them up; a custom data model would map `manifest.json` → experiment and `actuals.csv` → data.
+How our design fits: packages are self-describing folders (`manifest.json` + CSV/JSON) carrying the reaction ID, written to an outbox folder on a Linux machine. Before the department server exists that is the Pi; afterwards it is the server's packages folder (§12, Deployment). A Lab Connect agent runs on that host — not inside our container — and watches the folder (or the folder is synced to S3); a custom data model would map `manifest.json` → experiment and `actuals.csv` → data.
 
 To decide later: which ELN; the reaction ID format the ELN generates; whether the app can look up/validate an ID against the ELN; whether Lab Connect needs a specific folder layout or file naming; whether packages must also carry a human-readable report (PDF/HTML).
 
@@ -153,7 +154,7 @@ Decided to add one (D18); model not chosen. Plan:
 4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
 5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for programs; setup check with role matching.
 6. Program import (file, link, notebook helper), JSON Schema.
-7. **Department server** (D20): define, set up HTTPS and hosting, feedback → private issues, then central records, packages for Luma, NU login.
+7. **Department server** (D20, D22): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; feedback → private issues; then central records, packages for Luma, NU login.
 8. ELN/Luma integration.
 9. Safe-run watchdog on units that support it (RET `OUT_WD`), more devices.
 
@@ -190,20 +191,36 @@ GitHub Pages only serves files: the app has nowhere private to keep a key or sen
 - Login with NU credentials (single sign-on): a real operator on every change.
 - One deployment updates every Pi.
 
+### Deployment (D22)
+
+The server is one container image; the host is whatever the department provides. Most likely IT gives us a Linux VM and we run the container on it with Docker or Podman. If containers are not allowed, the same service installs directly on the VM, with more manual upkeep.
+
+| Need | How |
+| --- | --- |
+| Data that survives updates (database, feedback queue, reaction records, packages) | A host folder mounted into the container, included in IT's backups |
+| GitHub token and other secrets | A secrets file on the host; never in the image or the repo |
+| HTTPS certificate | A reverse proxy in front (Caddy, or IT's own) holding NU's certificate |
+| NU login (later) | IT's single sign-on at the proxy; the app receives the user's identity |
+| Luma Lab Connect | Its agent runs on the host and watches the mounted packages folder |
+| Updates | Pull the new image and restart; roll back the same way. Settings in one compose file in the repo |
+
+Device control is unaffected: the Pi's browser still talks to the equipment over USB; the server hosts the app and receives data.
+
 ### Requirements
 
 - HTTPS with a certificate trusted by the Pis' browsers (Web Serial needs a secure page); NU IT can likely issue one for an internal hostname.
 - IT approval to run the service on the network; outbound access to GitHub if issues go there.
-- A backup plan for the server's data.
+- A host for the container (VM or server) and a container runtime, or permission to install one.
+- Backups of the mounted data folder.
 
 ### Interim option
 
-The Pi can run the same small server for itself: pages served from `localhost` count as secure, so no certificate is needed, and the token stays on the Pi. Moving to the department server later is the same code on another machine.
+The Pi can run the same container for itself: pages served from `localhost` count as secure, so no certificate is needed, and the token stays on the Pi. Moving to the department server later is the same code on another machine.
 
 ### To define
 
-- Hardware and hostname; who administers it (department IT or us).
-- Server stack (proposal: small Node service next to the static app, SQLite for storage).
+- Host: VM or physical server, container platform available?, hostname; who administers it (department IT or us).
+- Server stack inside the container (proposal: small Node service next to the static app, SQLite for storage).
 - Issue destination: private GitHub repo or an NU tracker.
 - Authentication: NU single sign-on or none at first.
 - Which data moves to the server first: feedback only, or reaction records and packages too.
@@ -225,7 +242,7 @@ The Pi can run the same small server for itself: pages served from `localhost` c
 - Who confirms prompts — needs operator identity (login)?
 - Pump direction: set by programs or only checked?
 - Camera model and mounting position.
-- Department server: hardware, hostname, administration, stack, issue destination, login (§12 "To define").
+- Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
 ## Keeping this document current
 
