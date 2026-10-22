@@ -16,7 +16,9 @@
     "manuals:index": "node scripts/manuals.mjs index"
   },
   "dependencies": {
-    "uplot": "^1.6.32"
+    "fflate": "^0.8.3",
+    "uplot": "^1.6.32",
+    "webm-muxer": "^5.1.4"
   },
   "devDependencies": {
     "@types/w3c-web-serial": "^1.0.8",

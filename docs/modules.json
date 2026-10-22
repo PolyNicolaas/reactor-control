@@ -98,6 +98,23 @@
         "search: Reglo ICC RS232 command set manual pdf"
       ],
       "lastFeatureReview": "2026-10-22"
+    },
+    {
+      "id": "usb-camera",
+      "name": "USB camera (UVC webcam)",
+      "kind": "Camera",
+      "status": "driver-ready",
+      "driver": "src/camera/camera.ts",
+      "notes": "docs/manuals/usb-camera/notes.md",
+      "identifiesAs": "Camera name reported by the browser",
+      "connection": "USB; browser camera API (getUserMedia), not Web Serial",
+      "buy": "Model not chosen (Logitech C920 class or Arducam UVC; see DESIGN §9)",
+      "documents": [],
+      "watch": [
+        "search: Chromium MediaStreamTrack focusMode manual UVC",
+        "search: WebCodecs VideoEncoder Raspberry Pi Chromium performance"
+      ],
+      "lastFeatureReview": "2026-10-22"
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22.
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22 (camera module).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -52,11 +52,15 @@ The station workflow (D23):
 | Page setup: devices, names, colours, order, user limits, serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
 | Chart view: time range, hidden lanes/channels | Browser storage (`reactor-control.chart`) | Same | |
 | Last hour of samples (for the chart) | Memory | Lost on reload | |
-| **Recording — samples**, 1 per second per device: every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
+| **Recording — samples**, 1 per second per device (download: two CSV files, or one zip with `samples.csv`, `events.csv`, `media.csv` and the media folders when a camera recorded): every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
 | **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
+| **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
+| **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change or note (setpoints, switches, Stop all, notes, **Mark**), merged when changes are close, max 5 min | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
+| **Camera — snapshots** (button) | While recording: `snapshots/` in the zip; otherwise downloaded at once | Same | |
+| Camera list (name, which camera) | Browser storage (`reactor-control.page`) | Until changed | Cameras restart on reload once the site has camera permission |
 
-Not recorded today: reaction ID, operator, the program/plan, the source of each change (person or program), photos, device firmware versions.
+Not recorded today: reaction ID, station name, operator, the program/plan, the source of each change (person or program), device firmware versions. Nothing is uploaded anywhere yet.
 
 ### Planned
 
@@ -75,6 +79,7 @@ Not recorded today: reaction ID, operator, the program/plan, the source of each 
 - **Drivers describe devices; the core does the work.** A driver lists readings, setpoints, switches, stop commands and its wire protocol. Panels, polling, chart, recording and Stop all are generic. Adding a model is a new driver file (see README).
 - **Protocols:** NAMUR for IKA (9600 7E1, CR LF, unacknowledged writes) and Ismatec for the Reglo ICC (9600 8N1, CR, `*`/`#` acknowledgements). Add device tries both.
 - **One command in flight per port**; polling and user commands share the queue.
+- **Cameras are not serial devices.** They use the browser camera API (`getUserMedia`) and have their own card and code (`src/camera/`). Every change on the page is logged as a note; each note while recording triggers a clip on every camera. Clips are encoded once (WebCodecs) into a rolling 60 s buffer, so a clip can start before the change (D28).
 - **Simulators and tests:** every driver has a simulated unit (usable from Add device) and tests in `src/test/` that run on every push (D27).
 - **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
 
@@ -126,6 +131,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D25 | 2026-10-22 | **Video is limited:** time-lapse plus clips around changes, both at 720p; no continuous video. These settings are fixed for now — users cannot change them (user-adjustable settings are a future idea, §11) | Keeps storage and upload small; the clips capture the moments that matter |
 | D26 | 2026-10-22 | **A dropped connection never stops the record or the reaction.** Each link (VNC, host, module USB, the Pi itself) fails safe as described in §4 "When a connection drops"; nothing recorded is lost, gaps are marked | Stations are ephemeral and networked; failures must be expected |
 | D27 | 2026-10-22 | Every driver has a simulator and tests; pushes to `main` run the tests before deploying | Changes to shared code must not silently break a device; the pump can be developed before it arrives |
+| D28 | 2026-10-22 | Camera module built on the browser camera API (not Web Serial): time-lapse by grabbing frames, clips by encoding once with WebCodecs into a rolling buffer and writing WebM; media kept in browser storage (IndexedDB) and downloaded with the recording until the host exists | Works with any UVC webcam in Chromium, no extra software on the Pi; one encoder keeps the Pi load low; IndexedDB keeps large files out of memory |
 
 ## 6. Programs (draft)
 
@@ -176,6 +182,8 @@ To decide later: which ELN; the reaction ID format the ELN generates; whether th
 
 Decided to add a camera (D18); model not chosen (options: USB webcams such as the Logitech C920 class or Arducam UVC cameras). The camera is treated like a module: plugged into the station Pi for the reaction and connected in the app.
 
+**Built (trial, D28):** **Add camera** on the control page; the card shows the live view, resolution, counts, and the measured encode rate; **Snapshot**, **Mark (save clip)** and, where the camera supports it, **Lock focus & exposure**. While recording it makes the time-lapse and change clips described below and they download with the recording as one zip. Not built yet: streaming to the host (needs the server), live tile for remote viewers. Notes and tests: [manuals/usb-camera/notes.md](manuals/usb-camera/notes.md).
+
 **What the station model (D23, D24) means for video**
 
 - **Stream to the host during the reaction.** The Pi is ephemeral and has a small SD card, so video and photos are uploaded in short chunks (a few seconds each) as they are recorded. If the network drops, chunks wait in browser storage and catch up. If the Pi is unplugged early, the host has everything up to the last chunk. *Reaction complete* shows "upload finished" before the station can be torn down.
@@ -198,7 +206,7 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
 2. **Package and outbox**: as-run program from setpoints, outbox folder writer, zip fallback.
-3. **Camera**: live tile, 720p time-lapse and change clips (D25), buffered on the Pi until a host exists.
+3. **Camera**: ~~live view, 720p time-lapse and change clips (D25), download with the recording~~ built as a trial (D28). Next: test on the station Pi with VNC and pick the camera; upload to the host comes with item 7.
 4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
 5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for programs; setup check with role matching.
 6. Program import (file, link, notebook helper), JSON Schema.
@@ -301,6 +309,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 
 - Recordings live in memory until downloaded; a reload loses them (fixed by roadmap item 1).
 - No reaction ID, station name or operator in the record yet; the CSV files are named by date only.
+- Camera media stays in that browser until downloaded and is cleared when the next recording starts; clips need Chromium (WebCodecs); the encode rate on a Pi with VNC is untested; focus/exposure lock depends on the camera.
 - Changes are logged as commands, not as "who changed what".
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).

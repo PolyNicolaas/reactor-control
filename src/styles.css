@@ -191,6 +191,20 @@ main { padding: 20px; display: grid; gap: 20px; }
 .status[data-state='pumping'] { background: color-mix(in srgb, var(--good) 20%, transparent); }
 .panel.is-offline .groups { opacity: 0.35; pointer-events: none; }
 
+/* Camera cards */
+.panel.camera-panel { grid-template-columns: minmax(210px, 250px) minmax(0, 1.3fr) minmax(0, 1.2fr); align-items: start; border-left-color: var(--ink-2); }
+.cam-icon { font-size: 22px; color: var(--ink-2); text-align: center; }
+.cam-view video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 10px; }
+.cam-side { display: grid; gap: 8px; align-content: start; }
+.cam-side p { margin: 0; }
+.cam-info { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cam-clip { color: var(--warn); font-weight: 600; }
+.cam-clip:empty { display: none; }
+.cam-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cam-actions button[aria-pressed='true'] { background: var(--good); border-color: var(--good); color: #fff; }
+.panel.camera-panel.is-offline .cam-view { opacity: 0.35; }
+.add-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
 .offline { display: none; }
 .panel.is-offline .tiles, .panel.is-offline .setpoints, .panel.is-offline .switches { opacity: 0.35; pointer-events: none; }
 .panel.is-offline .offline { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bad) 12%, transparent); }
@@ -210,6 +224,8 @@ main { padding: 20px; display: grid; gap: 20px; }
   .panel { grid-template-columns: 1fr 1fr; }
   .panel > header { grid-column: 1 / -1; }
   .panel.is-grouped { grid-template-columns: 1fr; }
+  .panel.camera-panel { grid-template-columns: 1fr 1fr; }
+  .panel.camera-panel > header { grid-column: 1 / -1; }
   .panel.is-grouped > .tiles { grid-column: 1; }
 }
 
@@ -304,6 +320,6 @@ main { padding: 20px; display: grid; gap: 20px; }
   main { padding: 12px; }
   .topbar { padding: 10px 12px; }
   .stop-all { width: 100%; order: 3; }
-  .panel { grid-template-columns: 1fr; }
+  .panel, .panel.camera-panel { grid-template-columns: 1fr; }
   .log-card { margin: 0 12px 140px; }
 }

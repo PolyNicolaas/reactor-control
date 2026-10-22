@@ -4,6 +4,8 @@ import { SerialTransport, transportFor } from './serialTransport';
 import { getDriver } from '../devices/registry';
 import { detectDriver } from '../devices/registry';
 import { probeName, recognises } from './probe';
+import { CameraModule, type MediaOut } from '../camera/camera';
+import { mediaStore } from '../camera/mediaStore';
 import type { SerialLink, Transport } from './types';
 
 export const DEVICE_COLORS = ['#2f7de1', '#e0742f', '#2fa66a', '#a64fd6', '#d23f6b', '#1f9fb0', '#b28a12', '#6d7a8a'];
@@ -22,9 +24,27 @@ export interface SavedDevice {
   groupLabels?: Record<string, string>;
 }
 
+export interface SavedCamera {
+  id: string;
+  label: string;
+  deviceId: string;
+}
+
 export interface PageConfig {
   name: string;
   devices: SavedDevice[];
+  cameras?: SavedCamera[];
+}
+
+/** A camera file in a recording. The file itself is in IndexedDB (mediaStore) under `file`. */
+export interface MediaItem {
+  t: number;
+  end?: number;
+  cameraId: string;
+  kind: MediaOut['kind'];
+  file: string;          // path inside the download, e.g. "clips/camera-1_+000690.0s.webm"
+  bytes: number;
+  reason?: string;
 }
 
 export interface Column {
@@ -53,6 +73,7 @@ export interface Run {
   notes: Note[];
   columns: Column[];
   devices: { id: string; label: string; model: string; nameReply: string }[];
+  media: MediaItem[];
 }
 
 const CONFIG_KEY = 'reactor-control.page';
@@ -61,6 +82,9 @@ const HISTORY_MS = 60 * 60 * 1000;
 /** App state: devices on the page, a 1 s sampler for chart and recording, the event log. */
 export class App {
   readonly devices: DeviceInstance[] = [];
+  readonly cameras: CameraModule[] = [];
+  /** Media made while not recording (snapshots): handed to the UI to download straight away. */
+  readonly looseMedia = new Emitter<{ cam: CameraModule; m: MediaOut }>();
   readonly changed = new Emitter<void>();
   readonly sampled = new Emitter<Row>();
   readonly logged = new Emitter<DeviceEvent>();
@@ -68,7 +92,7 @@ export class App {
   /** Saved devices whose port is not available yet (shown as "Reconnect" cards). */
   missing: SavedDevice[] = [];
   run?: Run;
-  config: PageConfig = { name: 'Control page', devices: [] };
+  config: PageConfig = { name: 'Control page', devices: [], cameras: [] };
 
   constructor() {
     setInterval(() => this.sample(), 1000);
@@ -150,6 +174,61 @@ export class App {
     this.note('Stop all pressed');
   }
 
+  // ----- cameras -----
+
+  async addCamera(label: string, deviceId: string, id?: string): Promise<CameraModule> {
+    let n = 1;
+    while (!id && this.cameras.some((c) => c.id === `camera-${n}`)) n++;
+    const cam = new CameraModule(id ?? `camera-${n}`, label, deviceId);
+    cam.changed.on(() => this.changed.emit());
+    cam.media.on((m) => void this.onMedia(cam, m));
+    this.cameras.push(cam);
+    await cam.start();
+    if (this.run) {
+      this.addRunCamera(cam);
+      cam.startRecording();
+    }
+    this.save();
+    this.changed.emit();
+    return cam;
+  }
+
+  removeCamera(cam: CameraModule): void {
+    cam.stop();
+    this.cameras.splice(this.cameras.indexOf(cam), 1);
+    this.save();
+    this.changed.emit();
+  }
+
+  private addRunCamera(cam: CameraModule): void {
+    if (this.run && !this.run.devices.some((d) => d.id === cam.id)) {
+      this.run.devices.push({ id: cam.id, label: cam.label, model: 'camera', nameReply: cam.deviceLabel });
+    }
+  }
+
+  private async onMedia(cam: CameraModule, m: MediaOut): Promise<void> {
+    const run = this.run;
+    if (!run) {
+      this.looseMedia.emit({ cam, m });
+      return;
+    }
+    const folder = { timelapse: 'timelapse', clip: 'clips', snapshot: 'snapshots' }[m.kind];
+    const elapsed = ((m.t - run.startedAt) / 1000).toFixed(1).padStart(8, '0');
+    const file = `${folder}/${cam.id}_+${elapsed}s.${m.ext}`;
+    try {
+      await mediaStore.put(file, m.blob);
+    } catch (e) {
+      this.logged.emit({ t: Date.now(), deviceId: cam.id, kind: 'error', text: `Could not store ${file}: ${(e as Error).message}` });
+      return;
+    }
+    run.media.push({ t: m.t, end: m.end, cameraId: cam.id, kind: m.kind, file, bytes: m.blob.size, reason: m.reason });
+    if (m.kind !== 'timelapse') {
+      const e = { t: Date.now(), deviceId: cam.id, kind: 'info' as const, text: `${m.kind === 'clip' ? 'Clip' : 'Snapshot'} saved: ${file}${m.reason ? ` (${m.reason})` : ''}` };
+      run.events.push(e);
+      this.logged.emit(e);
+    }
+  }
+
   // ----- persistence of the page -----
 
   private saveTimer?: number;
@@ -181,6 +260,7 @@ export class App {
       };
     });
     this.config.devices.push(...this.missing);
+    this.config.cameras = this.cameras.map((c) => ({ id: c.id, label: c.label, deviceId: c.deviceId }));
     try {
       localStorage.setItem(CONFIG_KEY, JSON.stringify(this.config));
     } catch {
@@ -206,6 +286,8 @@ export class App {
     const cfg = this.loadSaved();
     if (!cfg) return [];
     this.config.name = cfg.name;
+    // Cameras: the browser remembers camera permission per site, so they come back without a click.
+    for (const c of cfg.cameras ?? []) await this.addCamera(c.label, c.deviceId, c.id);
     const ports = 'serial' in navigator ? await navigator.serial.getPorts() : [];
     const usedPorts = new Set<SerialPort>();
     const missing: SavedDevice[] = [];
@@ -295,8 +377,13 @@ export class App {
   }
 
   startRun(): void {
-    this.run = { startedAt: Date.now(), rows: [], events: [], notes: [], columns: [], devices: [] };
+    this.run = { startedAt: Date.now(), rows: [], events: [], notes: [], columns: [], devices: [], media: [] };
     this.refreshRunColumns();
+    void mediaStore.clear().catch(() => {});
+    for (const cam of this.cameras) {
+      this.addRunCamera(cam);
+      cam.startRecording();
+    }
     this.note('Recording started');
     this.changed.emit();
   }
@@ -312,10 +399,12 @@ export class App {
     }
   }
 
-  stopRun(): Run | undefined {
+  async stopRun(): Promise<Run | undefined> {
     const run = this.run;
     if (!run) return;
     this.note('Recording stopped');
+    // Cameras finish the clip they are capturing before the run closes.
+    await Promise.all(this.cameras.map((c) => c.stopRecording()));
     run.endedAt = Date.now();
     this.run = undefined;
     this.changed.emit();
@@ -326,6 +415,9 @@ export class App {
     const n = { t: Date.now(), text };
     this.run?.notes.push(n);
     this.logged.emit({ t: n.t, deviceId: '', kind: 'info', text: `Note: ${text}` });
+    // Every change on the page arrives here as a note (setpoints, switches, Stop all, user notes):
+    // each one gets a camera clip around it (DESIGN D25).
+    if (this.run && !/^Recording (started|stopped)$/.test(text)) for (const cam of this.cameras) cam.trigger(text);
   }
 
   get anyRunning(): boolean {

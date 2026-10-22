@@ -9,6 +9,7 @@ A browser control page for lab reactor equipment over Web Serial, run in Chromiu
 | IKA EUROSTAR 60 control | Overhead stirrer | Bench-tested |
 | IKA RET control-visc | Hotplate stirrer with balance | Bench-tested |
 | Ismatec Reglo ICC (4 channels) | Peristaltic pump | Driver ready, not yet bench-tested |
+| USB camera (any UVC webcam) | Camera | Trial: time-lapse and change clips |
 
 Full list and status: [docs/MODULES.md](docs/MODULES.md).
 
@@ -29,14 +30,16 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 - One card per unit, built from its driver: live readings, setpoints with read-back from the unit, on/off switches, a status word. Pump channels each get their own block and can be named.
 - **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
-- Recording with notes; download as CSV (samples and events). See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
+- Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
 - RET balance with software tare. Per-setpoint user limits; confirmation before heating or large temperature jumps.
+- **Cameras** (Add camera): live view, a 720p time-lapse frame every 10 s and a clip from 60 s before to 60 s after every change while recording; snapshots; focus/exposure lock where supported. Media downloads with the recording as one zip.
 - Bench terminal per unit for raw commands (IKA NAMUR or Ismatec), with replies in text and hex.
 
 ## Requirements
 
 - Chrome or Edge on a computer, or Chromium on the Raspberry Pi (Web Serial is Chromium-only and needs HTTPS).
 - The browser must run on the computer the units are plugged into.
+- Cameras: the browser asks once for camera permission for the site. Clips need Chromium/Chrome (WebCodecs).
 - Linux / Raspberry Pi: the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in).
 - RET control-visc: turn **off** the "Eurostar" option in its system settings, otherwise the heater switches off when the serial cable is unplugged.
 - Reglo ICC: set each channel's tubing inner diameter and rotation direction on the pump. The app sets flow (mL/min) and start/stop.
@@ -85,6 +88,7 @@ Panels, polling, chart, STOP ALL and recording pick it up automatically.
 | `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release |
 | `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
 | `src/devices/` | Drivers, registry, simulators (`simulator.ts` for IKA, `regloSim.ts` for the pump) |
-| `src/ui/` | Cards, add device, chart, bench terminal, CSV export |
+| `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |
+| `src/ui/` | Cards (devices, cameras), add device/camera, chart, bench terminal, CSV and zip export |
 | `src/test/` | Tests (vitest) |
 | `scripts/manuals.mjs` | Manual library: fetch, check, index |

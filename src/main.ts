@@ -8,6 +8,9 @@ import { eventsCsv, runFileStem, samplesCsv } from './ui/csv';
 import { download, h, toast } from './ui/dom';
 import { devicePanel } from './ui/panel';
 import { getDriver } from './devices/registry';
+import type { CameraModule } from './camera/camera';
+import { cameraPanel, openAddCamera } from './ui/cameraPanel';
+import { mediaCsv, mediaZip } from './ui/mediaExport';
 
 const app = new App();
 let lastRun: Run | undefined;
@@ -17,7 +20,7 @@ const chips = h('div', { class: 'chips' });
 const stopBtn = h('button', { class: 'stop-all', onclick: () => stopAll() }, 'STOP ALL');
 const recBtn = h('button', { class: 'rec', onclick: () => toggleRecording() }, 'Start recording');
 const recState = h('span', { class: 'rec-state' }, 'Not recording');
-const dlBtn = h('button', { onclick: () => downloadRun(), disabled: true }, 'Download CSV') as HTMLButtonElement;
+const dlBtn = h('button', { onclick: () => downloadRun(), disabled: true }, 'Download recording') as HTMLButtonElement;
 const noteInput = h('input', { type: 'text', placeholder: 'Add a note, e.g. "added reagent B"', 'aria-label': 'Note' }) as HTMLInputElement;
 const panels = h('div', { class: 'panels' });
 const chartHost = h('div', { class: 'chart' });
@@ -54,10 +57,11 @@ const chart = liveChart(app, chartHost);
 
 // ---------- panels ----------
 const views = new Map<DeviceInstance, ReturnType<typeof devicePanel>>();
+const camViews = new Map<CameraModule, ReturnType<typeof cameraPanel>>();
 let lastIds = '';
 
 function renderPanels() {
-  const ids = app.devices.map((d) => `${d.id}:${d.label}:${JSON.stringify(d.groupLabels)}`).join('|') + '#' + app.missing.map((m) => m.id).join('|');
+  const ids = app.devices.map((d) => `${d.id}:${d.label}:${JSON.stringify(d.groupLabels)}`).join('|') + '#' + app.missing.map((m) => m.id).join('|') + '#' + app.cameras.map((c) => c.id).join('|');
   if (ids !== lastIds) {
     lastIds = ids;
     for (const dev of [...views.keys()]) if (!app.devices.includes(dev)) views.delete(dev);
@@ -81,13 +85,27 @@ function renderPanels() {
         ),
       );
     }
-    els.push(h('button', { class: 'add-tile', onclick: () => openAddDevice(app) }, h('span', { class: 'plus' }, '+'), 'Add device'));
+    for (const cam of [...camViews.keys()]) if (!app.cameras.includes(cam)) camViews.delete(cam);
+    for (const cam of app.cameras) {
+      if (!camViews.has(cam)) camViews.set(cam, cameraPanel(app, cam));
+      els.push(camViews.get(cam)!.el);
+    }
+    els.push(
+      h(
+        'div',
+        { class: 'add-row' },
+        h('button', { class: 'add-tile', onclick: () => openAddDevice(app) }, h('span', { class: 'plus' }, '+'), 'Add device'),
+        h('button', { class: 'add-tile', onclick: () => openAddCamera(app) }, h('span', { class: 'plus' }, '+'), 'Add camera'),
+      ),
+    );
     panels.replaceChildren(...els);
     chart.rebuild();
   }
   for (const v of views.values()) v.update();
+  for (const v of camViews.values()) v.update();
   chips.replaceChildren(
     ...app.devices.map((d) => h('span', { class: 'chip', style: `--dev:${d.color}`, 'data-state': d.status.toLowerCase().replace(/\s+/g, '-') }, h('span', { class: 'dot' }), `${d.label}: ${d.status}`)),
+    ...app.cameras.map((c) => h('span', { class: 'chip', 'data-state': c.status === 'Not available' ? 'disconnected' : 'idle' }, h('span', { class: 'dot' }), `${c.label}: ${c.status}`)),
   );
   recBtn.textContent = app.run ? 'Stop recording' : 'Start recording';
   recBtn.classList.toggle('on', !!app.run);
@@ -153,7 +171,7 @@ app.sampled.on(() => {
 });
 
 app.logged.on((e) => {
-  const dev = app.devices.find((d) => d.id === e.deviceId);
+  const dev = app.devices.find((d) => d.id === e.deviceId) ?? app.cameras.find((c) => c.id === e.deviceId);
   logList.prepend(h('li', { class: e.kind }, h('time', {}, new Date(e.t).toLocaleTimeString()), dev ? ` ${dev.label}: ` : ' ', e.text));
   while (logList.children.length > 300) logList.lastChild!.remove();
 });
@@ -164,10 +182,14 @@ async function stopAll() {
   toast('Stop all sent to every connected unit');
 }
 
-function toggleRecording() {
+async function toggleRecording() {
   if (app.run) {
-    lastRun = app.stopRun();
-    recState.textContent = lastRun ? `Stopped · ${lastRun.rows.length} rows ready to download` : 'Not recording';
+    recBtn.setAttribute('disabled', '');
+    if (app.cameras.length) recState.textContent = 'Stopping · saving the last camera clip…';
+    lastRun = await app.stopRun();
+    recBtn.removeAttribute('disabled');
+    const media = lastRun?.media.length ? ` and ${lastRun.media.length} camera files` : '';
+    recState.textContent = lastRun ? `Stopped · ${lastRun.rows.length} rows${media} ready to download` : 'Not recording';
     dlBtn.disabled = !lastRun;
   } else {
     app.startRun();
@@ -175,12 +197,49 @@ function toggleRecording() {
   }
 }
 
-function downloadRun() {
+async function downloadRun() {
   if (!lastRun) return;
-  const stem = runFileStem(lastRun);
-  download(`${stem}_samples.csv`, samplesCsv(lastRun));
-  setTimeout(() => download(`${stem}_events.csv`, eventsCsv(lastRun!)), 300);
+  const run = lastRun;
+  const stem = runFileStem(run);
+  if (!run.media.length) {
+    download(`${stem}_samples.csv`, samplesCsv(run));
+    setTimeout(() => download(`${stem}_events.csv`, eventsCsv(run)), 300);
+    return;
+  }
+  // With camera files: one zip with the CSVs, a media index and the media folders.
+  dlBtn.disabled = true;
+  dlBtn.textContent = 'Preparing zip…';
+  try {
+    const blob = await mediaZip(stem, [
+      ['samples.csv', samplesCsv(run)],
+      ['events.csv', eventsCsv(run)],
+      ['media.csv', mediaCsv(run)],
+    ], run.media);
+    downloadBlob(`${stem}.zip`, blob);
+  } catch (e) {
+    toast(`Could not build the zip: ${(e as Error).message}`, 'error');
+  } finally {
+    dlBtn.disabled = false;
+    dlBtn.textContent = 'Download recording';
+  }
 }
+
+function downloadBlob(name: string, blob: Blob) {
+  const a = h('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 2000);
+}
+
+// Snapshots taken while not recording download straight away.
+app.looseMedia.on(({ cam, m }) => {
+  const d = new Date(m.t);
+  const p = (n: number) => String(n).padStart(2, '0');
+  downloadBlob(`${cam.id}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${m.ext}`, m.blob);
+});
 
 function addNote() {
   const t = noteInput.value.trim();
