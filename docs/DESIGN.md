@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (cards grouped by function; controls before the chart; "program" renamed "method").
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (control variables for methods listed in method-format.md).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (draft method format) · [manuals/](manuals/README.md) (device notes)
 
@@ -255,6 +255,7 @@ Add ideas here with a date; move them to the roadmap when decided.
 - 2026-10-26 — Record each rule's state and margin with the samples, to tune defaults from real runs and to see a margin shrink before a trip.
 - 2026-10-26 — More cross-module rules: a second probe (EUROSTAR PT100 in the flask) must agree with the RET probe; pump stops when the flask is above a temperature; RET magnetic stirring stops when an overhead stirrer is in the flask.
 - 2026-10-26 — Safety rule changes (toggles, settings) need a reason or an operator once login exists; a supervisor may lock some rules on.
+- 2026-10-26 — Control variables for methods (ramp rate, constant torque, feed on temperature, stability/torque gates, per-method limits): catalogue and questions in [method-format.md](method-format.md#control-variables-to-decide-2026-10-26).
 - 2026-10-26 — Methods list the safety rules (and capabilities) they need, checked at setup like required devices.
 - 2026-10-26 — Hotplate: page-wide HOT banner (not only the card) and a sound on interlock trips, for someone at the hood not looking at the screen.
 

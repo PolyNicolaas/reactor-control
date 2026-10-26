@@ -108,12 +108,13 @@ Each lane is a list of steps, run in order. Proposed step types:
 | Step | Meaning | Example |
 | --- | --- | --- |
 | `set` | Change setpoints/switches now | `{ "do": "set", "temp": 60, "on": true }` |
-| `ramp` | Move a setpoint linearly over a time | `{ "do": "ramp", "speed": 400, "over": "5 min" }` |
+| `ramp` | Move a setpoint linearly over a time, or at a rate | `{ "do": "ramp", "speed": 400, "over": "5 min" }`, `{ "do": "ramp", "temp": 80, "rate": "2 °C/min" }` |
 | `hold` | Keep current values for a time or until an event | `{ "do": "hold", "for": "30 min" }` |
 | `until` | Wait for a reading condition (a **gate**), with a timeout | `{ "do": "until", "reading": "probe", "op": ">=", "value": 58, "timeout": "45 min" }` |
 | `wait` | Wait for another lane or a prompt | `{ "do": "wait", "for": "until:charged" }` |
 | `dose` | Pump a volume at a rate (pump-channel roles) | `{ "do": "dose", "volume": 10, "rate": 0.5 }` |
 | `mark` | Put a named event on the timeline | `{ "do": "mark", "id": "sample-1" }` |
+| `control` *(proposed)* | Hold a reading at a target by adjusting a setpoint (closed loop) | `{ "do": "control", "hold": "torque", "target": 25, "by": "speed", "min": 100, "max": 600, "for": "2 h" }` |
 
 Steps can carry an `id`; other lanes and prompts refer to `lane.id` (`heater.hot`, `reagentA.done`). Durations are strings with units (`"90 s"`, `"5 min"`, `"1.5 h"`) so files stay readable.
 
@@ -122,6 +123,83 @@ Gates are what make methods robust to real chemistry: "dose when the probe reach
 ### Prompts
 
 Prompts are steps for people. The run waits (only the lanes that depend on it) until someone confirms. A prompt can ask for values (`"record": ["mass added (g)"]`) that go into the run record as data, next to the instrument data.
+
+## Control variables (to decide, 2026-10-26)
+
+What a method can command, how a target may change over time, what the app may control in a loop, and
+what a step may wait for. "Unit" = the instrument does it itself (keeps working if the Pi or browser dies);
+"app" = the app does it every poll (stops with the page: the unit then holds its last setpoint).
+Nothing in this section is built yet; it is the list to decide from.
+
+### 1. Direct setpoints and switches (what each function takes)
+
+| Function | Variable | Unit | Who | Notes |
+| --- | --- | --- | --- | --- |
+| Heating (RET) | `temp` — medium temperature with the probe in, plate temperature without | °C | unit | The plate runs as hot as it takes; the safety rules (§15) bound it |
+| Heating | `on` | — | unit | |
+| Heating | plate cap for this run | °C | app | = the *Plate maximum* rule's setting; a method could set it from its solvents (autoignition list) |
+| Stirring (EUROSTAR) | `speed`, `on` | rpm | unit | 30–2000 rpm |
+| Stirring (EUROSTAR) | **torque limit** `OUT_SP_5` | Ncm | unit | In the manual, not used yet. A unit-side limit keeps working without the Pi; complements the app's *Torque limit* rule. Bench: what the unit does at the limit (stop, error 4?) |
+| Stirring (EUROSTAR) | direction `OUT_MODE_1/2` | — | unit | Setup fact or method variable? (also pump direction) |
+| Stirring (RET) | `speed`, `on` | rpm | unit | 50–1700 rpm, magnetic |
+| Pump channel | `flow`, `on` | mL/min | unit | Rate × time = dispensed (estimate until calibrated) |
+| Pump channel | **dose volume** (pump's Volume mode) | mL | unit | The pump stops itself at the volume: safer than the app timing it (DESIGN §11) |
+| Pump channel | direction `nJ`/`nK` | — | unit | Same question as the stirrer |
+
+### 2. How a target changes over time
+
+| Shape | Parameters | Who | Notes |
+| --- | --- | --- | --- |
+| Step | value | unit | Today's behaviour |
+| **Ramp by rate** | end value, **rate** (°C/min, rpm/s, mL/min per min) | app | The rate chemists think in ("heat at 2 °C/min to 80 °C"). The app moves the setpoint every poll. |
+| Ramp by duration | end value, time | app | Already in the step list (`"over": "5 min"`); a rate is derived from it |
+| On-unit ramp (RET `RMP_*`) | segments | unit | Only in an older RET manual; untested on ours. Would survive a Pi crash. Bench `RMP_IN_1` first |
+| Soak / profile | list of (value, ramp, hold) | app | A sequence of ramps and holds; just steps |
+| Max ramp rate (limit) | per variable | app | A method or page limit: no step may change temperature faster than N °C/min (glassware, exotherms) |
+
+Ramps must agree with the safety rules: during a heating ramp the setpoint trails the end value, so
+*Plate above setpoint* (plate > setpoint + 30 °C) can trip while the plate leads a fast ramp. Options:
+compare against the ramp's end value, or widen the margin while ramping. To decide.
+
+### 3. Closed loops the app could run (one reading drives another setpoint)
+
+| Loop | Reads | Adjusts | Use | Notes |
+| --- | --- | --- | --- | --- |
+| **Constant torque** | stirrer torque | stirrer speed | Viscous mixtures, polymerisations: keep shear/torque constant as the mixture thickens | No serial torque mode on the EUROSTAR (only on its own panel), so the app does it: slow loop (1 s polls), speed bounded by min/max, rate-limited. Torque units/meaning still to confirm on the bench (notes.md) |
+| Speed-on-viscosity | RET viscosity trend | RET stirrer speed | Same idea on a magnetic stirrer | The trend needs a constant set speed (manual), so it cannot drive speed directly — probably a gate only |
+| **Feed on temperature** | probe | pump flow (pause or scale) | Exothermic additions: dose only while the probe stays below a limit; pause and resume | The classic semi-batch safety pattern; cheap to build (pause/resume, no tuning) |
+| Feed on torque | torque | pump flow | Stop adding when the mixture gets too thick | |
+| Heat on another probe | EUROSTAR PT100 (in flask) | RET setpoint | When the RET probe is in a bath and the EUROSTAR probe in the flask | Cascade control; needs care (lag) |
+
+Every loop needs: target, bounds (min/max of what it adjusts), a maximum step per poll, what happens if
+the reading is lost (hold last value, or stop), and a record of every adjustment (source: the loop).
+
+### 4. Gates and endpoints (what a step can wait for)
+
+| Gate | Example | Notes |
+| --- | --- | --- |
+| Reading reaches a value | probe ≥ 58 °C | In the step list (`until`) |
+| Reading stable | probe within ±0.5 °C for 3 min | "At temperature" without guessing a time |
+| Torque reaches / plateaus | torque ≥ 25 Ncm; torque change < 2 % over 10 min | Polymerisation / thickening endpoints |
+| Viscosity trend changes | trend +20 % from start | Needs constant speed while measured |
+| Volume dispensed | reagentA ≥ 10 mL | From the pump channel |
+| Mass (RET balance) | added ≥ 5.0 g | Only with heating and stirring off (manual p. 25): a pause step, not a live gate |
+| Time | 30 min | `hold` |
+| Person confirms | "added the solid" | `prompt`, can record values |
+
+### 5. Per-method limits
+
+Caps that apply during a run on top of device ranges, page limits and safety rules: max temperature,
+max plate, max speed, max torque, max flow, max total volume per channel, max ramp rate. A method may only
+tighten the page's safety settings, never loosen them (same principle as the rules).
+
+### Questions to settle
+
+- Ramp rate as the primary way to write ramps (`"rate": "2 °C/min"`) with duration as the alternative?
+- Constant-torque control: do we need it soon (polymerisations), or is a torque gate enough at first?
+- Feed-on-temperature: pause/resume only, or proportional slowing?
+- Use the EUROSTAR's own torque limit (`OUT_SP_5`) as a unit-side backstop for the app's torque rule?
+- Which loops must survive a Pi failure, and can they (unit-side features: RET ramps, pump Volume mode, torque limit)?
 
 ## Running with people in the loop
 
