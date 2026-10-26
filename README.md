@@ -87,7 +87,7 @@ Panels, polling, chart, STOP ALL and recording pick it up automatically.
 | `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings |
 | `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release |
 | `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
-| `src/devices/` | Drivers, registry, simulators (`simulator.ts` for IKA, `regloSim.ts` for the pump) |
+| `src/devices/` | Drivers, registry, simulators (`simulator.ts` for IKA, `regloSim.ts` for the pump), `retInterlock.ts` (RET plate/probe interlock) |
 | `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |
 | `src/ui/` | Cards (devices, cameras), add device/camera, chart, bench terminal, CSV and zip export |
 | `src/test/` | Tests (vitest) |

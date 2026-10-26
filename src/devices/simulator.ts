@@ -18,6 +18,9 @@ export class SimTransport implements Transport {
   private viscosity = 1;
   private load = 412.6; // beaker + 250 mL water, g
   private weighFrom = performance.now() + 5000; // stands in for pressing G on the unit
+  // Fault injection for testing interlocks (bench terminal: SIM_PROBE_OUT 1, SIM_PIN 2 300, SIM_PIN 2).
+  private probeOut = false;
+  private pinned: Record<number, number> = {};
 
   constructor(readonly model: 'eurostar60' | 'retControlVisc') {
     if (model === 'eurostar60') {
@@ -52,6 +55,16 @@ export class SimTransport implements Transport {
   private handle(cmd: string): string | null {
     const [head, arg] = cmd.split(/\s+/);
     if (head === 'IN_NAME') return this.model === 'eurostar60' ? 'IKA ES 60' : 'RET control-visc';
+    if (head === 'SIM_PROBE_OUT') {
+      this.probeOut = arg === '1';
+      return null;
+    }
+    if (head === 'SIM_PIN') {
+      const [, ch, v] = cmd.split(/\s+/);
+      if (v === undefined) delete this.pinned[Number(ch)];
+      else this.pinned[Number(ch)] = Number(v);
+      return null;
+    }
     if (head === 'RESET') {
       this.on = {};
       return null;
@@ -77,6 +90,9 @@ export class SimTransport implements Transport {
     m = /^(START|STOP)_(\d+)$/.exec(head);
     if (m) {
       this.on[Number(m[2])] = m[1] === 'START';
+      // Like our ES 60 (bench 2026-10-26, user report): after Motor off the motor does not run again
+      // until the speed is applied. Modelled as STOP_4 clearing the set speed.
+      if (this.model === 'eurostar60' && m[1] === 'STOP' && m[2] === '4') this.sp[4] = 0;
       return null;
     }
     return null;
@@ -100,12 +116,14 @@ export class SimTransport implements Transport {
     } else {
       const sp = this.sp[1] ?? 22;
       const probe = this.pv[1];
-      const plateTarget = this.on[1] ? Math.min(340, sp + Math.max(0, Math.min(40, (sp - probe) * 1.5))) : 22;
+      // Probe out of the medium: like the real RET, the plate keeps heating towards the safety limit.
+      const boost = this.probeOut ? 400 : Math.min(40, (sp - probe) * 1.5);
+      const plateTarget = this.on[1] ? Math.min(340, this.pv[3], sp + Math.max(0, boost)) : 22;
       const plate = this.pv[2];
       // Plate heats at most ~15 °C/min, cools slowly.
       const next = approach(plate, plateTarget, plateTarget > plate ? 40 : 300);
       this.pv[2] = plateTarget > plate ? Math.min(next, plate + dt * 0.25) : next;
-      this.pv[1] = approach(probe, this.pv[2], 60) + noise(0.1);
+      this.pv[1] = this.probeOut ? approach(probe, 22, 60) + noise(0.1) : approach(probe, this.pv[2], 60) + noise(0.1);
       if (this.on[4]) this.viscosity = Math.min(this.viscosity + dt * 0.001, 2);
       if (this.pv[1] > 40) this.load -= dt * (this.pv[1] - 40) * 0.0004; // evaporation
       const settle = Math.max(0, 1 - (performance.now() - this.weighFrom) / 4000); // wobbles for ~4 s
@@ -113,5 +131,6 @@ export class SimTransport implements Transport {
       if (this.on[1] || this.on[4]) this.weighFrom = performance.now() + 5000; // leaves weighing mode
       this.pv[5] = this.on[4] ? (this.viscosity - 1) * 100 + noise(1) : 0;
     }
+    for (const [ch, v] of Object.entries(this.pinned)) this.pv[Number(ch)] = v;
   }
 }

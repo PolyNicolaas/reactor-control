@@ -55,6 +55,12 @@ export interface SetpointSpec {
   tolerance: number;    // read-back within this counts as "confirmed"
   toleranceRel?: number; // ...or within this fraction of the value (devices that round to significant figures)
   actualKey?: string;   // the reading this setpoint drives (for status and charts)
+  /** The switch that makes the unit act on this setpoint (speed -> motor). Enables the set-vs-actual line. */
+  switchKey?: string;
+  /** Actual within this of the set value counts as "at setpoint" (default: 2 °C, else max(5, 3 %)). */
+  band?: number;
+  /** Seconds the actual may take to start moving after a start or a change before it counts as "not following" (default 8). */
+  graceS?: number;
   group?: string;
 }
 
@@ -67,7 +73,49 @@ export interface SwitchSpec {
   group?: string;
 }
 
-export type DeviceStatus = 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
+/** A user-adjustable number for an interlock (e.g. how far the plate may run above the setpoint). */
+export interface InterlockSetting {
+  key: string;
+  label: string;
+  unit: string;
+  default: number;
+  min: number;
+  max: number;
+  step: number;
+  hint?: string;
+}
+
+/**
+ * A software interlock: after every poll the app checks the unit's readings and, when check() returns
+ * a reason, switches the listed functions off and keeps them locked out until the user resets it.
+ * It acts whether the app or the unit's keypad turned the function on. It only works while this page
+ * is open and the unit answers; the unit's own safety circuit is the cut-off that does not depend on it.
+ */
+export interface InterlockSpec {
+  key: string;
+  label: string;
+  /** Switch keys turned off on a trip and refused while tripped. */
+  switches: string[];
+  settings: InterlockSetting[];
+  /**
+   * Return a reason when the unit must stop, else undefined. `mem` is private per-interlock memory
+   * kept between polls (history); `now` is epoch ms. Must be pure apart from `mem`.
+   */
+  check(s: DeviceSnapshot, settings: Record<string, number>, mem: Record<string, unknown>, now: number): string | undefined;
+  /** One line for the card describing what is enforced right now, e.g. "Plate cut-off 100 °C". */
+  describe?(s: DeviceSnapshot, settings: Record<string, number>): string;
+}
+
+/** How a setpoint is being followed right now (see DeviceInstance.tracking). */
+export interface Tracking {
+  state: 'off' | 'ok' | 'moving' | 'stuck' | 'mismatch' | 'unknown';
+  set?: number;       // the unit's set value (read back)
+  intended?: number;  // the value last applied from this page
+  actual?: number;
+  text: string;
+}
+
+export type DeviceStatus = 'Interlock' | 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
 
 export interface DeviceSnapshot {
   values: Record<string, number | undefined>;      // reading key -> value (net, after tare)
@@ -88,6 +136,8 @@ export interface DeviceDriver {
   setpoints: SetpointSpec[];
   switches: SwitchSpec[];
   stopCommands: string[];        // what Stop all sends
+  /** Software interlocks (see InterlockSpec). */
+  interlocks?: InterlockSpec[];
   releaseCommand?: string;       // sent when the device is removed (hand back to local control)
   watchdog?: { verified: boolean; arm(seconds: number): string };
   status(s: DeviceSnapshot): DeviceStatus;
