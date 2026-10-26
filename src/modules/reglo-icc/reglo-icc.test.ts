@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DeviceInstance } from '../core/device';
-import { parseVolumeType1, regloIcc, volumeType2 } from '../devices/regloIcc';
+import { peer, runSafety, snap } from '../shared/testing';
+import { regloSafety } from './safety';
+import { DeviceInstance } from '../../core/device';
+import { parseVolumeType1, regloIcc, volumeType2 } from './module';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -74,5 +76,24 @@ describe('Reglo ICC driver against the simulator', () => {
     const { dev, sent } = await connect();
     await dev.disconnect(true);
     expect(sent.slice(-5)).toEqual(['1I', '2I', '3I', '4I', '1A']);
+  });
+});
+
+describe('Reglo safety', () => {
+  const pump = (dispensed: number, run = true) => snap({ dispensed1: dispensed }, {}, { run1: run });
+
+  it('volume limit stops the channel at its maximum (off by default)', () => {
+    expect(runSafety(regloSafety, (t) => pump(t * 0.1), 100).statuses.volume1.state).toBe('off');
+    const hit = runSafety(regloSafety, (t) => pump(t * 0.1), 200, { set: { volumeMax1: 5 } });
+    expect(hit.rule).toBe('volume1');
+    expect(hit.t).toBe(50);
+  });
+
+  it('dosing stops 5 s after nothing on the page is stirring; any "stirrer" counts', () => {
+    const magnetic = (stirring: boolean) => [peer({ label: 'Hotplate', provides: ['stirrer', 'magnetic-stirrer'], active: { stirring } })];
+    const hit = runSafety(regloSafety, () => pump(1), 100, { peers: (t) => magnetic(t < 30) });
+    expect(hit.rule).toBe('noStirring');
+    expect(hit.t).toBe(35);
+    expect(runSafety(regloSafety, () => pump(1), 100).statuses.noStirring.text).toBe('no peer');
   });
 });

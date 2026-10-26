@@ -9,5 +9,5 @@
   - the "Last reviewed" date at the top
 - Keep `README.md` (setup, code map) and `docs/MODULES.md` (generated from `docs/modules.json`) in step too.
 - Device facts come from the manual: cite the page in `docs/manuals/<module>/notes.md`.
-- New drivers get a simulator and a test in `src/test/`.
+- Devices are **modules**: one folder in `src/modules/<id>/` (module.ts, safety.ts, sim.ts, tests, README.md). Follow `src/modules/README.md`; keep each module's README true to its code, since modules are how people learn to write new ones. Every safety rule gets a test where it trips and one where it must not.
 - Run `npm test` and `npm run build` before pushing; `main` runs the tests and deploys to GitHub Pages.

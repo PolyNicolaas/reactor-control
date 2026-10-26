@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { probeName, recognises } from '../core/probe';
-import { retControlVisc } from '../devices/retControlVisc';
+import { retControlVisc } from '../modules/ret-control-visc/module';
 
 /** A fake Web Serial port that answers NAMUR commands from a table of raw byte replies. */
 function fakePort(replies: Record<string, number[]>): SerialPort {

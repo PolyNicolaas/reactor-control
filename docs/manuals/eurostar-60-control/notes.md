@@ -3,7 +3,7 @@
 **Manual:** `EUROSTAR_60-100_control_operating_instructions_20000003965c.pdf` — IKA operating instructions 20000003965c, EUROSTAR 60 control / 100 control, 03/2018, EN, 21 pages.
 **Source:** https://cdn.abicart.com/shop/ws72/72372/art14/156950114-5574d5-20000003965c_EN_EUROSTAR_60_100_control_032018_web.pdf
 **SHA-256:** `92d67aad98e480845f60ca9dcd26f13192530eb1bea18d26cc4e1b8cc4862d2d`
-**Driver:** [`src/devices/eurostar60.ts`](../../../src/devices/eurostar60.ts)
+**Module:** [`src/modules/eurostar-60-control/`](../../../src/modules/eurostar-60-control/)
 
 ## Key facts
 

@@ -3,7 +3,7 @@
 **Manual:** `RET_control-visc_operating_instructions_20000004159.pdf` — IKA operating instructions 20000004159, RET control-visc, 04/2019, multilingual (DE p. 4, **EN p. 20–37**), 136 pages.
 **Source:** https://assets.wolflabs.co.uk/AssetsStore/IKA_hotplates_RET-Control-Visc_manual.pdf
 **SHA-256:** `1e1606aeb1921599d8b60672cba583c1bbe40f58ca44b63fa7744ff9d177219b`
-**Driver:** [`src/devices/retControlVisc.ts`](../../../src/devices/retControlVisc.ts)
+**Module:** [`src/modules/ret-control-visc/`](../../../src/modules/ret-control-visc/)
 
 ## Key facts
 

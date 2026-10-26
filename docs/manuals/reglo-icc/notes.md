@@ -3,7 +3,7 @@
 **Manual:** `Reglo_ICC_operating_manual_14-036-E_revC.pdf` — Cole-Parmer/Ismatec 14-036-E, rev. C, English, 36 pages.
 **Source:** https://github.com/numat/ismatec/raw/master/doc/14-036-e-ismatec-reglo-icc-english-revc.pdf (copy kept by the numat `ismatec` Python driver)
 **SHA-256:** `c54f492a7ffee366d98f4f8d3d25b989614ecc51ad89e59a1d207420d5719536`
-**Driver:** [`src/devices/regloIcc.ts`](../../../src/devices/regloIcc.ts)
+**Module:** [`src/modules/reglo-icc/`](../../../src/modules/reglo-icc/)
 **Our unit:** 4 channels, 12 rollers, Fisher NC0916780 (Masterflex MFLX7800182).
 
 ## Key facts

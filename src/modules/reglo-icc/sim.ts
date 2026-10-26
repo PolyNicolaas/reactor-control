@@ -1,5 +1,5 @@
-import type { Transport } from '../core/types';
-import { sleep } from '../core/serialTransport';
+import type { Transport } from '../../core/types';
+import { sleep } from '../../core/serialTransport';
 
 // Max flow (mL/min) per tubing inner diameter (mm) at 100 rpm, from the manual's chart (p. 16).
 const MAX_FLOW: [number, number][] = [[0.76, 3.6], [1.02, 6.3], [1.52, 13], [2.06, 20], [2.54, 27], [3.17, 35]];

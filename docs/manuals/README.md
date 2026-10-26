@@ -33,5 +33,5 @@ Annotations go in `notes.md`, not in the PDF, so they are versioned, reviewable 
 
 1. Add an entry to `docs/modules.json` (status `candidate` or `planned`), with the manual's URL, checksum (`sha256sum file.pdf`) and the `watch` sources to search.
 2. Copy `_template/` to `docs/manuals/<id>/`, run `npm run manuals:fetch`, fill in `notes.md`.
-3. Write the driver and a simulator in `src/devices/`, register it, add a test in `src/test/`, set status to `driver-ready`, then `supported` after bench testing.
+3. Build the module in `src/modules/<id>/` following [the module guide](../../src/modules/README.md) (description, safety rules, simulator, tests, README), register it, set status to `driver-ready`, then `supported` after bench testing.
 4. Run `npm run manuals:index` to refresh MODULES.md.

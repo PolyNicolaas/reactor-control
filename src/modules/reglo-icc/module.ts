@@ -1,8 +1,13 @@
-import { ISMATEC } from '../core/protocol';
-import { parseNumber, type DeviceDriver, type DeviceSnapshot, type ReadingSpec, type SetpointSpec, type SwitchSpec } from '../core/types';
-import { RegloSimTransport } from './regloSim';
+import { ISMATEC } from '../../core/protocol';
+import { parseNumber, type DeviceDriver, type DeviceSnapshot, type ReadingSpec, type SetpointSpec, type SwitchSpec } from '../../core/types';
+import { regloSafety } from './safety';
+import { RegloSimTransport } from './sim';
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Ismatec Reglo ICC — peristaltic pump with independently controlled channels.
+// The module to read for: a non-IKA protocol (src/core/protocol.ts), several channels drawn as groups
+// on one card, values the app computes itself (derive), its own simulator, and safety rules generated
+// per channel plus one that watches any stirrer on the page.
 // Source: operating manual 14-036-E rev. C (see docs/manuals/reglo-icc/notes.md), serial protocol p. 17–33.
 // Our unit: 4 channels, 12 rollers, USB Mini-B (virtual COM port) or RS-232.
 //
@@ -14,6 +19,7 @@ import { RegloSimTransport } from './regloSim';
 // - The pump has no flow sensor. "Flow" here is the set rate while the channel runs, else 0, and
 //   "Dispensed" is that rate integrated over time by the app (an estimate; calibrate the channel).
 // - Rotation direction is NOT changed by the app; set it on the pump so the reagent flows into the reactor.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const CHANNELS = 4;
 const MAX_FLOW = 35; // mL/min, largest tubing (3.17 mm ID), manual p. 16. Smaller tubing allows less; the pump refuses more.
@@ -65,12 +71,14 @@ const stoppedPolls = new WeakMap<DeviceSnapshot, number>();
 export const regloIcc: DeviceDriver = {
   model: 'regloIcc',
   displayName: 'Reglo ICC',
+  source: 'reglo-icc',
   kind: 'Peristaltic pump',
   protocol: ISMATEC,
   serial: ISMATEC.probes[0].link.options,
   lineEnd: '\r',
   // Reply to "1#": model, software version, pump head code (manual p. 24, ref 6.22).
   identify: (name) => /REGLO/i.test(name),
+  provides: ['pump', 'dosing'],
   groups: chans.map((n) => ({ key: g(n), label: `Ch ${n}` })),
   readings,
   setpoints,
@@ -103,6 +111,7 @@ export const regloIcc: DeviceDriver = {
       s.values[`dispensed${n}`] = (s.values[`dispensed${n}`] ?? 0) + (flow * Math.min(dt, 10)) / 60;
     }
   },
+  safety: regloSafety,
   simulate: () => new RegloSimTransport(),
   status: (s) => (chans.some((n) => s.switches[`run${n}`]) ? 'Pumping' : 'Idle'),
 };

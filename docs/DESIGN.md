@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (shared admin account on every station, D41; VNC without a password, D40; station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (devices as self-contained, self-teaching modules; per-module safety rules shown live on every card; rules that watch other modules).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -49,11 +49,11 @@ The station workflow (D23):
 
 | What | Where | When / how long | Notes |
 | --- | --- | --- | --- |
-| Page setup: devices, names, colours, order, user limits, interlock settings (D32), last hot-plate reading (D36), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
+| Page setup: devices, names, colours, order, user limits, safety settings per module (D43; pages saved before keep theirs), last hot-plate reading (D36), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
 | Chart view: time range, hidden lanes/channels | Browser storage (`reactor-control.chart`) | Same | |
 | Last hour of samples (for the chart) | Memory | Lost on reload | |
 | **Recording — samples**, 1 per second per device (download: two CSV files, or one zip with `samples.csv`, `events.csv`, `media.csv` and the media folders when a camera recorded): every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
-| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, interlock trips (with the reason; also trigger a camera clip) and resets, interlock setting changes (including "Cap plate at" from the solvent list) | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
+| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, safety stops (rule and reason; also trigger a camera clip) and resets, safety setting changes (including "Cap plate at" from the solvent list), safety rules armed or disarmed as modules join or leave the page | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
 | **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
 | **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31) | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
@@ -76,11 +76,13 @@ Not recorded today: reaction ID, station name, operator, the program/plan, the s
 
 ## 4. How it works (short)
 
-- **Drivers describe devices; the core does the work.** A driver lists readings, setpoints, switches, stop commands and its wire protocol. Panels, polling, chart, recording and Stop all are generic. Adding a model is a new driver file (see README).
+- **Modules describe devices; the core does the work (D42).** Each device type is a folder in `src/modules/<id>/`: `module.ts` (readings, setpoints, switches, stop commands, wire protocol, what it `provides`), `safety.ts` (its safety rules), `sim.ts`, tests and a README on how it is built. Cards, polling, chart, recording, Stop all and the safety engine are generic. A new device is a new folder; [`src/modules/README.md`](../src/modules/README.md) teaches how, with the existing modules as worked examples and `_template/` to copy.
+- **Safety rules belong to modules and are shown live (D43).** After every poll the core evaluates each of the module's rules; each returns a state (off, idle, learning, ok, near, trip) and one line with its numbers, shown in the card's **Safety** section with the rule's plain-language *why*. A trip switches the rule's switches off, repeats it every 5 s while it lasts, locks them out until **Reset safety stop**, and is logged with a camera clip. A rule that throws trips (fails safe).
+- **Modules know about other modules (D44).** A module declares capabilities (`provides`: `stirrer`, `overhead-stirrer`, `hotplate`, `pump`…). A rule with `withPeer: <capability>` is armed only while a module providing it is on the page, and reads it read-only (latest values, history, activities, whether it answers); it never commands it, it stops its own unit. Rules arm and disarm as modules join or leave the page (logged), and a new module that declares a capability is covered by existing rules without changing them. One page = one reactor.
 - **Protocols:** NAMUR for IKA (9600 7E1, CR LF, unacknowledged writes) and Ismatec for the Reglo ICC (9600 8N1, CR, `*`/`#` acknowledgements). Add device tries both.
 - **One command in flight per port**; polling and user commands share the queue.
 - **Cameras are not serial devices.** They use the browser camera API (`getUserMedia`) and have their own card and code (`src/camera/`). Every change is logged as a note — changes made on the cards, and changes each unit shows by itself, found by polling (activity crossing a threshold, e.g. speed above 20 rpm = stirring; setpoints that changed without a write from the card). Each note while recording triggers a clip on every camera; with a camera present, a change starts the recording if none is running (D31). The encoder runs whenever a camera is live. Clips are encoded once (WebCodecs) into a rolling 60 s buffer, so a clip can start before the change (D28).
-- **Simulators and tests:** every driver has a simulated unit (usable from Add device) and tests in `src/test/` that run on every push (D27).
+- **Simulators and tests:** every module has a simulated unit (usable from Add device; IKA modules share `shared/namurSim.ts` and describe only their physics) and tests in its own folder; every safety rule is tested on made-up timelines (`shared/testing.ts`) where it must trip and where it must not. Core tests are in `src/test/`. All run on every push (D27).
 - **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
 
 ### When a connection drops (D26)
@@ -145,6 +147,9 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D39 | 2026-10-26 | **One setup script per station** (`scripts/setup-station.sh`): on a fresh Raspberry Pi OS (desktop, 64-bit) it sets the station name, optional Wi-Fi (including enterprise/eduroam), desktop autologin, VNC, no screen blanking, `dialout`, a forced display for headless VNC, and a Chromium window that opens the app with `?station=<name>` once the network is up and reopens if closed. After the first working station, clone its SD card and only change the name | Stations are ephemeral and interchangeable (D23); a new or replaced Pi should be one command away from ready |
 | D40 | 2026-10-26 | **VNC needs no password for now.** The setup script turns off wayvnc authentication (`enable_auth=false`); the Pi desktop already logs in by itself, so a user goes straight from `<station>.local` to the app. `VNC_AUTH=on` keeps the Pi user's login. Supersedes "a password per Pi" in §12 | Nobody has to know or share a login while stations are being set up. Accepted risks, to deal with later: anyone who can reach a Pi on the network can control its units, including heaters; the connection is unencrypted; the record cannot say who was connected; some VNC viewers warn or refuse. Options to revisit: restrict VNC to the lab subnet (firewall or a lab network from IT), a shared password saved in each viewer, or the server dashboard with NU login (§12) |
 | D41 | 2026-10-26 | **Every station has the same admin account, user `admin`**, set in Raspberry Pi Imager when the card is flashed. It is used for SSH, `sudo` and the setup script, not by people running reactions (the desktop logs in by itself, VNC has no password, D40). **The password is never written in this repository** (it is public); the lab keeps it | One login to remember for whoever maintains the stations. A password in a public repo would let anyone who reaches a Pi on the network log in over SSH with full control |
+| D42 | 2026-10-26 | **Each device type is a self-contained module folder** (`src/modules/<id>/`: `module.ts` in nine fixed sections, `safety.ts`, `sim.ts`, tests, README on how it is built and why), with a guide (`src/modules/README.md`) and a compiling, tested `_template/`. The IKA simulator is split into a shared NAMUR base and per-module physics. Supersedes the `src/devices/` layout | Modules should teach the next person how to write one: everything about a device in one place, the same shape every time, with the reasons written down |
+| D43 | 2026-10-26 | **Safety rules are part of each module and visible on every card.** The single RET interlock (D32, D35) becomes seven named rules in `ret-control-visc/safety.ts`; every rule shows its live state and numbers and its *why* in a Safety section on the card; settings are grouped by rule in Limits; "Interlock" is now "Safety stop" (status, banner, log). Rule thresholds and defaults unchanged. Saved settings carry over | The person at the hood should see what guards the unit and how close it is to stopping, not only the trip; a rule explained on the card also teaches |
+| D44 | 2026-10-26 | **Rules can watch other modules by capability** (`provides` / `withPeer`), armed only while such a module is on the page. New rules: RET *Overhead stirring* (heater off if the overhead stirrer stops or stops answering while heating, 5 s; heating before it ever stirred only warns), Reglo *Dose only while stirring* (all channels off after 5 s with nothing stirring; any `stirrer` counts), Reglo per-channel *volume limit* (off by default), EUROSTAR *torque limit* (off by default) | Hazards cross units (heating or dosing an unstirred flask), but each rule still lives with the switch it turns off, so plugging a module in brings its rules. Matching on capability, not model, covers modules written later |
 
 ## 6. Programs (draft)
 
@@ -242,6 +247,9 @@ Add ideas here with a date; move them to the roadmap when decided.
 - 2026-10-22 — Station dashboard: all Pis and their reactions on one page, through the server (§12, Remote access).
 - 2026-10-26 — Hotplate: user marks which solvents are in the hood (ticks in the ⚠ list), the cap follows the lowest; later from the program's reagent list (§15).
 - 2026-10-26 — Hotplate: heat-up "fingerprint" per flask/bath size from recorded runs, to tune the dynamic rules per setup instead of one default.
+- 2026-10-26 — Record each rule's state and margin with the samples, to tune defaults from real runs and to see a margin shrink before a trip.
+- 2026-10-26 — More cross-module rules: a second probe (EUROSTAR PT100 in the flask) must agree with the RET probe; pump stops when the flask is above a temperature; RET magnetic stirring stops when an overhead stirrer is in the flask.
+- 2026-10-26 — Programs list the safety rules (and capabilities) they need, checked at setup like required devices.
 - 2026-10-26 — Hotplate: page-wide HOT banner (not only the card) and a sound on interlock trips, for someone at the hood not looking at the screen.
 
 ## 12. Department server and feedback (planned — D20, D21; to be defined)
@@ -349,6 +357,8 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
 - **Hotplate safety (§15) is software**: it cannot act if the browser, the Pi or the USB link is down. The hardware cut-off is the RET's own safety temperature (read as "Safety limit", set on the unit, default up to 380 °C): set it on each unit to just above the hottest plate a reaction needs. The interlock thresholds are first guesses from the simulator; check them on the bench with a real flask/oil bath (a big bath may need a larger "plate above setpoint", a slow one a lower "probe check: min rise", a big cold addition a larger "probe drop trip"; reflux starting at setpoint may trip the steady-gap rule).
+- Cross-module rules assume **one reactor per page**: every stirrer on the page is taken to stir this flask.
+- "Stirring" is judged from the stirrer's speed reading (above 20 rpm). A paddle that slips on its shaft, or a stir bar that decouples, still shows speed.
 - The stir bar decoupling is not seen directly (speed shows the motor, not the bar); only its effect on the plate–probe gap is.
 - The solvent list is a fixed reference list, not tied to what is actually in the flask.
 - RET balance: mass needs the weighing key (G) pressed on the unit; the tare is the app's, not the RET's (its display shows gross).
@@ -373,6 +383,7 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 - RET: how far above setpoint does the plate run during a normal heat-up (small flask, large flask, oil bath)? Sets the default for "plate above setpoint" (D32).
 - RET: what does `IN_PV_1` read with the probe unplugged, and does the unit then regulate on the plate? Should the interlock also refuse heating when the probe reading is missing?
 - RET: can the safety temperature be read as the set value (`IN_SP_3`) and should the app warn when it is above the interlock's plate maximum? Should the watchdog (`OUT_WD2` with `OUT_SP_12`) be armed so the unit drops to a safe temperature if the Pi dies?
+- Should *Overhead stirring* also trip when someone turns the stirrer off on purpose while heating (today: yes, after 5 s), or only on a stall/error? Same for *Dose only while stirring*.
 - EUROSTAR: after `STOP_4` / `START_4`, does `IN_SP_4` read 0 (set speed cleared) or the old value with the motor not turning? The card handles both (D33); the answer decides whether the driver should resend the speed on Motor on.
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
@@ -386,26 +397,28 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 | --- | --- | --- | --- |
 | Unit safety limit (set on the RET; read as "Safety limit", `IN_PV_3`) | Hard cut-off in the unit | **Yes** | Exists; set per unit to just above the hottest plate any reaction needs |
 | RET watchdog mode 2 (`OUT_WD2@m` + `OUT_SP_12@n`) | Unit drops to a safe temperature if the app stops talking | **Yes** | Planned; not bench-tested (§14) |
-| App interlock, static rules (D32, D34) | Heater off + lockout | No | Built |
-| App interlock, dynamic rules (D35) | Heater off + lockout, earlier | No | Built |
+| Module safety rules, static (D32, D34, D43) | Heater off + lockout | No | Built |
+| Module safety rules, dynamic (D35, D43) | Heater off + lockout, earlier | No | Built |
+| Module safety rules watching other modules (D44) | Heater off when the overhead stirrer stops | No | Built |
 | HOT state (D36), solvent list (D37) | Make the hazard visible; one-click cap | No | Built |
 
-**Interlock rules.** Checked after every poll (1 s), whether the heater was switched on from the card or the keypad. Any rule sends `STOP_1`, latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until **Reset interlock** on the card; reset is refused while a rule still holds. All numbers are per unit in ⋯ → Limits and saved with the page. Dynamic rules only add trips (D35).
+**Safety rules** (`src/modules/ret-control-visc/safety.ts`, D43). Checked after every poll (1 s), whether the heater was switched on from the card or the keypad. Any rule sends `STOP_1`, latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until **Reset safety stop** on the card; reset is refused while a rule still trips. Each rule's live state, numbers and *why* are in the card's Safety section; all numbers are per unit in ⋯ → Limits, grouped by rule, and saved with the page. Dynamic rules only add trips (D35).
 
-| # | Rule | Default | Catches |
+| # | Rule (name on the card) | Default | Catches |
 | --- | --- | --- | --- |
-| 1 | Plate above the maximum | 250 °C | Anything; also keep it below solvent autoignition (list below) |
-| 2 | Plate more than *N* above the setpoint and not cooling (lowering the setpoint over a hot plate does not trip) | 30 °C | Probe out of the medium at low and medium setpoints |
-| 3 | Probe response: plate ≥ 40 °C above the probe, probe below setpoint, and over 5 min the probe rises less than 3 % of the mean gap (never less than 1 °C) | 40 °C, 5 min, 3 % | Probe beside the flask or hanging in warm air; scales with how hard the plate is driving |
-| 4 | Probe drop: probe falls ≥ 10 °C within 2 min, setpoint unchanged, probe more than 5 °C below setpoint, heating | 10 °C | Probe pulled out mid-run (seconds, not minutes) |
-| 5 | Probe lost: probe reading missing or implausible (below −40 or above 400 °C) for 10 s while heating, after a probe was seen this session | — | Probe unplugged mid-run. Plate-only use without a probe is not affected |
-| 6 | Steady gap: once the probe has held the setpoint (±1.5 °C) for 3 min, the median plate–probe gap is learned (relearned on each setpoint change, only ever lowered); trip if the gap exceeds it by *N* for 30 s | 15 °C | Probe lifted slowly, flask boiling dry, stir bar decoupled, vessel moved |
+| 1 | *Plate maximum* — plate above the maximum | 250 °C | Anything; also keep it below solvent autoignition (list below) |
+| 2 | *Plate above setpoint* — plate more than *N* above the setpoint and not cooling (lowering the setpoint over a hot plate does not trip) | 30 °C | Probe out of the medium at low and medium setpoints |
+| 3 | *Probe responds* — plate ≥ 40 °C above the probe, probe below setpoint, and over 5 min the probe rises less than 3 % of the mean gap (never less than 1 °C) | 40 °C, 5 min, 3 % | Probe beside the flask or hanging in warm air; scales with how hard the plate is driving |
+| 4 | *Probe drop* — probe falls ≥ 10 °C within 2 min, setpoint unchanged, probe more than 5 °C below setpoint, heating | 10 °C | Probe pulled out mid-run (seconds, not minutes) |
+| 5 | *Probe present* — probe reading missing or implausible (below −40 or above 400 °C) for 10 s while heating, after a probe was seen this session | — | Probe unplugged mid-run. Plate-only use without a probe is not affected |
+| 6 | *Steady gap* — once the probe has held the setpoint (±1.5 °C) for 3 min, the median plate–probe gap is learned (relearned on each setpoint change, only ever lowered); trip if the gap exceeds it by *N* for 30 s | 15 °C | Probe lifted slowly, flask boiling dry, stir bar decoupled, vessel moved |
+| 7 | *Overhead stirring* (with `overhead-stirrer`, D44) — heating, and an overhead stirrer that was stirring stops or stops answering for *N* s; heating before it ever stirred shows amber only | 5 s | Stirrer switched off, stalled, in error or unplugged while the plate heats an unstirred flask |
 
-The card shows one line with what is enforced now ("Plate cut-off 80 °C · probe check on · steady gap 12 °C (+15 trips)").
+The Safety section's heading shows the overall state and the plate cut-off ("Safety · 7 of 7 rules on · all OK · Plate cut-off 80 °C"); each rule's row shows its live line, e.g. "Gap 12.4 °C · learned 11.8 °C · stops above 26.8 °C".
 
 **HOT state (D36).** HOT and the plate temperature in the card header from 50 °C plate, heating or not; the card gets an orange edge. When the unit stops answering, is unplugged, or the page reloads without it, the card shows MAY BE HOT with the last reading and its time, for up to an hour (the last reading is saved with the page).
 
-**Solvent autoignition list (D37).** A ⚠ section on the RET card lists common lab solvents with the lowest autoignition temperature found across Engineering ToolBox, ABB's Hazlux ignition-temperature table, Wikipedia and McMaster chemistry safety (sources differ by tens of degrees; acetonitrile 220 vs 524 °C). Reference = the larger of the current plate cut-off and the plate reading. Red rows: the plate may reach that temperature now; amber: within 50 °C; the summary shows the count. Each row whose cap would tighten the maximum has **Cap plate at** (autoignition − 20 °C, rounded down to 5), which after a confirm sets "Max plate temperature" and is logged. It is a reminder, not an SDS; bath oils need their own SDS check. Data: `src/devices/solvents.ts`.
+**Solvent autoignition list (D37).** A ⚠ section on the RET card lists common lab solvents with the lowest autoignition temperature found across Engineering ToolBox, ABB's Hazlux ignition-temperature table, Wikipedia and McMaster chemistry safety (sources differ by tens of degrees; acetonitrile 220 vs 524 °C). Reference = the larger of the current plate cut-off and the plate reading. Red rows: the plate may reach that temperature now; amber: within 50 °C; the summary shows the count. Each row whose cap would tighten the maximum has **Cap plate at** (autoignition − 20 °C, rounded down to 5), which after a confirm sets "Max plate temperature" and is logged. It is a reminder, not an SDS; bath oils need their own SDS check. Data: `src/modules/ret-control-visc/solvents.ts`.
 
 **Overlooked situations considered (2026-10-26).**
 
@@ -417,6 +430,7 @@ The card shows one line with what is enforced now ("Plate cut-off 80 °C · prob
 | Probe unplugged mid-run | Rule 5 (what the RET itself does then is an open question, §14) |
 | Setpoint above the solvent's boiling point / boiling dry | Rules 3 and 6 |
 | Stir bar decoupled | Rule 6, indirectly (§13) |
+| Overhead stirrer stops while heating | Rule 7 |
 | Solvent autoignition below the plate temperature | Solvent list + Cap plate at (manual); automatic cap is roadmap item 10 |
 | Plate still hot after the run | HOT / MAY BE HOT |
 | Pi, browser or USB failure | Unit safety limit only; watchdog mode 2 planned |

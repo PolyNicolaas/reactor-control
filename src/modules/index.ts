@@ -1,9 +1,10 @@
 import type { DeviceDriver } from '../core/types';
-import { eurostar60 } from './eurostar60';
-import { retControlVisc } from './retControlVisc';
-import { regloIcc } from './regloIcc';
+import { eurostar60 } from './eurostar-60-control/module';
+import { retControlVisc } from './ret-control-visc/module';
+import { regloIcc } from './reglo-icc/module';
 
-// Every available driver. Adding a new model = add a driver file and list it here.
+// Every module the app can use. A module is a folder in src/modules/ (see README.md there):
+// adding one = copy _template/, fill it in, and list it here.
 export const drivers: DeviceDriver[] = [eurostar60, retControlVisc, regloIcc];
 
 export function getDriver(model: string): DeviceDriver {

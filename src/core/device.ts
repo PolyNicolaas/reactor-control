@@ -1,7 +1,7 @@
 import { Emitter } from './emitter';
 import { sleep } from './serialTransport';
 import { NAMUR, type Protocol } from './protocol';
-import { parseNumber, type SetpointSpec, type Tracking, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
+import { parseNumber, type PeerView, type RuleContext, type RuleStatus, type Sample, type SafetyRule, type SetpointSpec, type Tracking, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
 
 export interface DeviceEvent {
   t: number;              // epoch ms
@@ -51,13 +51,20 @@ export class DeviceInstance {
   link?: SerialLink;
   /** User names for the driver's groups, e.g. pump channel 1 -> "Reagent A". */
   groupLabels: Record<string, string> = {};
-  /** User overrides of interlock settings, keyed "<interlock>.<setting>". */
-  interlockSettings: Record<string, number> = {};
-  /** Latched interlock trips: interlock key -> reason. Cleared only by resetInterlock(). */
+  /** User overrides of safety settings, keyed by setting key (unique within the module). */
+  safetySettings: Record<string, number> = {};
+  /** Latched safety trips: rule key -> reason. Cleared only by resetSafety(). */
   tripped: Record<string, string> = {};
-  /** Fires with "<label>: <reason>" when an interlock trips (for an alarm in the UI). */
+  /** Live status of every safety rule, refreshed after each poll. */
+  ruleStatus: Record<string, RuleStatus> = {};
+  /** Fires with "<label>: <reason>" when a safety rule trips (for an alarm in the UI). */
   readonly tripped$ = new Emitter<string>();
-  private interlockMem: Record<string, Record<string, unknown>> = {};
+  /** Other modules on the same page (set by the App). Rules with `withPeer` read them. */
+  peers: () => DeviceInstance[] = () => [];
+  /** This unit's recent polls, for safety rules (ModuleSafety.historyS). */
+  history: Sample[] = [];
+  private ruleMem: Record<string, Record<string, unknown>> = {};
+  private armedWith: Record<string, string> = {};
   /** Last reading of the driver's `hot` key and when it was taken (survives a disconnect). */
   lastHot?: { v: number; t: number };
   private lastOffSent: Record<string, number> = {};
@@ -113,7 +120,7 @@ export class DeviceInstance {
   get status(): DeviceStatus {
     if (!this.connected) return 'Disconnected';
     if (!this.responding) return 'No reply';
-    if (Object.keys(this.tripped).length) return 'Interlock';
+    if (Object.keys(this.tripped).length) return 'Safety stop';
     return this.driver.status(this.snapshot);
   }
 
@@ -262,56 +269,101 @@ export class DeviceInstance {
         hh.push({ t, v });
         while (hh.length && t - hh[0].t > 120_000) hh.shift();
       }
-      await this.checkInterlocks();
+      const hs = this.driver.safety?.historyS ?? 0;
+      if (hs > 0) {
+        this.history.push({ t, values: { ...this.snapshot.values }, setpoints: { ...this.snapshot.setpoints }, switches: { ...this.snapshot.switches } });
+        while (this.history.length && t - this.history[0].t > (hs + 5) * 1000) this.history.shift();
+      }
+      await this.checkSafety();
       this.detectChanges(prevSetpoints);
     }
   }
 
-  /** Settings for one interlock: the driver defaults with the user's overrides on top. */
-  interlockValues(key: string): Record<string, number> {
-    const il = this.driver.interlocks?.find((x) => x.key === key);
+  /** This module's safety settings: driver defaults with the user's overrides on top. */
+  safetyValues(): Record<string, number> {
     const out: Record<string, number> = {};
-    for (const st of il?.settings ?? []) out[st.key] = this.interlockSettings[`${key}.${st.key}`] ?? st.default;
+    for (const r of this.driver.safety?.rules ?? []) {
+      for (const st of r.settings ?? []) out[st.key] = this.safetySettings[st.key] ?? st.default;
+    }
     return out;
   }
 
+  /** Read-only view of this unit for other modules' rules. */
+  peerView(): PeerView {
+    return {
+      id: this.id,
+      label: this.label,
+      model: this.driver.model,
+      displayName: this.driver.displayName,
+      provides: this.driver.provides ?? [],
+      live: this.connected && this.responding,
+      snapshot: this.snapshot,
+      history: this.history,
+      active: (name) =>
+        this.driver.readings.some((r) => r.activity?.name === name && (this.snapshot.values[r.key] ?? 0) > r.activity.above),
+    };
+  }
+
+  private context(rule: SafetyRule, now: number, mem = (this.ruleMem[rule.key] ??= {})): RuleContext {
+    const peers = rule.withPeer
+      ? this.peers().filter((p) => p !== this && (p.driver.provides ?? []).includes(rule.withPeer!)).map((p) => p.peerView())
+      : [];
+    return { s: this.snapshot, history: this.history, set: this.safetyValues(), mem, now, peers };
+  }
+
+  /** Evaluate one rule. Rules with `withPeer` are idle while no such module is on the page. */
+  private evaluate(rule: SafetyRule, now: number, mem?: Record<string, unknown>): RuleStatus {
+    const ctx = this.context(rule, now, mem);
+    if (rule.withPeer && !ctx.peers.length) return { state: 'idle', text: `Armed when a module that provides "${rule.withPeer}" is on this page` };
+    return rule.evaluate(ctx);
+  }
+
   /**
-   * Run every interlock against the latest readings. A trip switches its functions off (whatever state
+   * Run every safety rule against the latest readings. A trip switches its functions off (whatever state
    * the app thinks they are in, since the keypad may have turned them on) and latches. While the
    * condition lasts, the off command is repeated every 5 s in case someone turns it back on at the unit.
+   * Rules that watch other modules are armed and disarmed as those modules join or leave the page.
    */
-  private async checkInterlocks(): Promise<void> {
+  private async checkSafety(): Promise<void> {
     const now = Date.now();
-    for (const il of this.driver.interlocks ?? []) {
-      const mem = (this.interlockMem[il.key] ??= {});
-      const reason = il.check(this.snapshot, this.interlockValues(il.key), mem, now);
-      if (!reason) continue;
-      const fresh = !this.tripped[il.key];
-      if (!fresh && now - (this.lastOffSent[il.key] ?? 0) < 5000) continue;
-      if (fresh) this.tripped[il.key] = reason;
-      this.lastOffSent[il.key] = now;
-      for (const key of il.switches) {
+    for (const rule of this.driver.safety?.rules ?? []) {
+      if (rule.withPeer) {
+        const with_ = this.peers().filter((p) => p !== this && (p.driver.provides ?? []).includes(rule.withPeer!)).map((p) => p.label).join(', ');
+        if (with_ !== (this.armedWith[rule.key] ?? '')) {
+          this.log('info', with_ ? `Safety rule "${rule.label}" armed (with ${with_})` : `Safety rule "${rule.label}" disarmed (no ${rule.withPeer} on the page)`);
+          this.armedWith[rule.key] = with_;
+        }
+      }
+      let st: RuleStatus;
+      try {
+        st = this.evaluate(rule, now);
+      } catch (e) {
+        st = { state: 'trip', text: `Rule failed: ${(e as Error).message}` }; // a broken rule fails safe
+      }
+      this.ruleStatus[rule.key] = st;
+      if (st.state !== 'trip') continue;
+      const reason = st.text;
+      const fresh = !this.tripped[rule.key];
+      if (!fresh && now - (this.lastOffSent[rule.key] ?? 0) < 5000) continue;
+      if (fresh) this.tripped[rule.key] = reason;
+      this.lastOffSent[rule.key] = now;
+      for (const key of rule.switches) {
         const sw = this.driver.switches.find((x) => x.key === key);
         if (!sw) continue;
         try {
           await this.send(sw.off);
         } catch (e) {
-          this.log('error', `Interlock could not send ${sw.off}: ${(e as Error).message}`);
+          this.log('error', `Safety stop could not send ${sw.off}: ${(e as Error).message}`);
         }
         this.snapshot.switches[key] = false;
       }
       if (fresh) {
-        const names = il.switches.map((k) => this.driver.switches.find((x) => x.key === k)?.label ?? k).join(', ').toLowerCase();
-        this.log('error', `INTERLOCK: ${names} off. ${reason}`);
-        this.changes.emit(`interlock tripped, ${names} off: ${reason}`);
-        this.tripped$.emit(`${this.label}: ${reason}`);
+        const names = [...new Set(rule.switches.map((k) => this.driver.switches.find((x) => x.key === k)?.label ?? k))].join(', ').toLowerCase();
+        this.log('error', `SAFETY STOP (${rule.label}): ${names} off. ${reason}`);
+        this.changes.emit(`safety stop "${rule.label}", ${names} off: ${reason}`);
+        this.tripped$.emit(`${this.label} — ${rule.label}: ${reason}`);
       }
     }
-  }
-
-  /** The interlock's private memory (e.g. a learned steady gap), for describe(). */
-  interlockMemory(key: string): Record<string, unknown> | undefined {
-    return this.interlockMem[key];
   }
 
   /**
@@ -327,10 +379,10 @@ export class DeviceInstance {
     return { state: live ? 'hot' : 'maybe', ...this.lastHot };
   }
 
-  /** Interlocks that lock out this switch right now. */
+  /** The safety trip that locks out this switch right now, if any. */
   lockedBy(switchKey: string): string | undefined {
-    for (const il of this.driver.interlocks ?? []) {
-      if (il.switches.includes(switchKey) && this.tripped[il.key]) return this.tripped[il.key];
+    for (const r of this.driver.safety?.rules ?? []) {
+      if (r.switches.includes(switchKey) && this.tripped[r.key]) return this.tripped[r.key];
     }
     return undefined;
   }
@@ -382,19 +434,21 @@ export class DeviceInstance {
     return { ...base, state: 'stuck', text: `${swLabel} is on but ${sp.label.toLowerCase()} is ${a} ${u}, not ${f(set)} ${u}. Not ${dir === 'rising' ? 'getting there' : 'coming down'}; apply the setpoint again or check the unit.` };
   }
 
-  /** Clear a trip. Refused (throws) while the condition is still present. */
-  resetInterlock(key: string): void {
-    const il = this.driver.interlocks?.find((x) => x.key === key);
-    if (!il || !this.tripped[key]) return;
-    // Check against a copy of the history, so a reset attempt does not add a sample.
-    const mem = this.interlockMem[key] ?? {};
-    const copy = { ...mem, h: [...((mem.h as unknown[]) ?? [])] };
-    const still = il.check(this.snapshot, this.interlockValues(key), copy, Date.now());
-    if (still) throw new Error(`Cannot reset yet: ${still}`);
-    delete this.tripped[key];
-    this.log('info', `Interlock reset by user (was: ${il.label})`);
+  /** Clear all trips. Refused (throws) while any tripped rule still trips. */
+  resetSafety(): void {
+    const now = Date.now();
+    for (const r of this.driver.safety?.rules ?? []) {
+      if (!this.tripped[r.key]) continue;
+      // Check on a copy of the rule's memory, so a reset attempt changes nothing.
+      const st = this.evaluate(r, now, { ...(this.ruleMem[r.key] ?? {}) });
+      if (st.state === 'trip') throw new Error(`Cannot reset yet — ${r.label}: ${st.text}`);
+    }
+    const was = Object.keys(this.tripped);
+    this.tripped = {};
+    if (was.length) this.log('info', `Safety stop reset by user (${was.join(', ')})`);
     this.changed.emit(this);
   }
+
 
   /** Report activity crossing its threshold and setpoints changed outside the card. */
   private detectChanges(prevSetpoints: Record<string, number | undefined>): void {
@@ -501,7 +555,7 @@ export class DeviceInstance {
     if (!sw) throw new Error(`No switch ${key}`);
     if (on) {
       const lock = this.lockedBy(key);
-      if (lock) throw new Error(`${sw.label} is locked out by the interlock: ${lock}. Reset it on the card first.`);
+      if (lock) throw new Error(`${sw.label} is locked out by a safety stop: ${lock}. Reset it on the card first.`);
     }
     await this.send(on ? sw.on : sw.off);
     if (on && !this.snapshot.switches[key]) this.switchedOnAt[key] = Date.now();

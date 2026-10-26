@@ -1,7 +1,7 @@
 import { transportFor } from './serialTransport';
 import { PROTOCOLS, protocolOf, type Protocol } from './protocol';
 import type { SerialLink } from './types';
-import { detectDriver } from '../devices/registry';
+import { detectDriver } from '../modules';
 
 const readable = (s: string) => /^[\x20-\x7e]+$/.test(s) && /[A-Za-z]/.test(s);
 

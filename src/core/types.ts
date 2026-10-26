@@ -73,9 +73,9 @@ export interface SwitchSpec {
   group?: string;
 }
 
-/** A user-adjustable number for an interlock (e.g. how far the plate may run above the setpoint). */
-export interface InterlockSetting {
-  key: string;
+/** A user-adjustable number for a safety rule (e.g. how far the plate may run above the setpoint). */
+export interface SafetySetting {
+  key: string;          // unique within the module; saved per unit
   label: string;
   unit: string;
   default: number;
@@ -86,24 +86,81 @@ export interface InterlockSetting {
 }
 
 /**
- * A software interlock: after every poll the app checks the unit's readings and, when check() returns
- * a reason, switches the listed functions off and keeps them locked out until the user resets it.
- * It acts whether the app or the unit's keypad turned the function on. It only works while this page
- * is open and the unit answers; the unit's own safety circuit is the cut-off that does not depend on it.
+ * What a rule says about the unit right now, shown live on the card.
+ *   off      the user turned it off (a setting of 0)
+ *   idle     nothing to watch right now (heater off, no probe, partner module not on the page)
+ *   learning collecting data before it can judge (e.g. the steady plate–probe gap)
+ *   ok       watching, nothing wrong
+ *   near     watching, getting close to tripping (amber)
+ *   trip     the unit must stop: the core switches the rule's switches off and locks them out
  */
-export interface InterlockSpec {
+export type RuleState = 'off' | 'idle' | 'learning' | 'ok' | 'near' | 'trip';
+export interface RuleStatus {
+  state: RuleState;
+  /** One plain line with the live numbers, e.g. "Plate 112 °C · trips above 150 °C". */
+  text: string;
+}
+
+/** One poll of a unit, kept as history for safety rules. */
+export interface Sample {
+  t: number;  // epoch ms
+  values: Record<string, number | undefined>;
+  setpoints: Record<string, number | undefined>;
+  switches: Record<string, boolean>;
+}
+
+/** Read-only view of another module on the same page (rules can read it, never command it). */
+export interface PeerView {
+  id: string;
+  label: string;
+  model: string;
+  displayName: string;
+  provides: string[];
+  /** Connected and answering polls. */
+  live: boolean;
+  snapshot: DeviceSnapshot;
+  history: Sample[];
+  /** True when one of its readings marked `activity: { name }` is above its threshold (e.g. "stirring"). */
+  active(name: string): boolean;
+}
+
+export interface RuleContext {
+  s: DeviceSnapshot;                 // this unit, latest poll
+  history: Sample[];                 // this unit, oldest first, covering ModuleSafety.historyS
+  set: Record<string, number>;       // this module's safety settings (defaults + the user's)
+  mem: Record<string, unknown>;      // private memory of this rule, kept between polls
+  now: number;                       // epoch ms
+  /** Other modules on the page that provide the rule's `withPeer` capability (empty for own rules). */
+  peers: PeerView[];
+}
+
+/**
+ * A safety rule. It belongs to the module whose switch it turns off, so plugging in a module always
+ * brings its rules. A rule may also watch other modules on the page (`withPeer`): it is then armed only
+ * while such a module is present, and reads it through ctx.peers.
+ *
+ * Principles (see src/modules/README.md): act on readings, not on what the app thinks it switched on;
+ * a rule may only add trips; explain itself in `why` and in every status line.
+ */
+export interface SafetyRule {
   key: string;
   label: string;
+  /** Plain language: what goes wrong without this rule. Shown on the card. */
+  why: string;
   /** Switch keys turned off on a trip and refused while tripped. */
   switches: string[];
-  settings: InterlockSetting[];
-  /**
-   * Return a reason when the unit must stop, else undefined. `mem` is private per-interlock memory
-   * kept between polls (history); `now` is epoch ms. Must be pure apart from `mem`.
-   */
-  check(s: DeviceSnapshot, settings: Record<string, number>, mem: Record<string, unknown>, now: number): string | undefined;
-  /** One line for the card describing what is enforced right now, e.g. "Plate cut-off 100 °C". */
-  describe?(s: DeviceSnapshot, settings: Record<string, number>, mem?: Record<string, unknown>): string;
+  settings?: SafetySetting[];
+  /** Armed only while a module providing this capability is on the page, e.g. "stirrer". */
+  withPeer?: string;
+  evaluate(ctx: RuleContext): RuleStatus;
+}
+
+export interface ModuleSafety {
+  /** Seconds of history the rules need. */
+  historyS: number;
+  rules: SafetyRule[];
+  /** One summary line for the card header of the Safety section (optional). */
+  summary?(s: DeviceSnapshot, set: Record<string, number>): string;
 }
 
 /** How a setpoint is being followed right now (see DeviceInstance.tracking). */
@@ -126,12 +183,12 @@ export interface CautionList {
   sources: string;
   items: { name: string; value: number; note?: string }[];
   nearBy: number;
-  reference(s: DeviceSnapshot, interlockValues: (key: string) => Record<string, number>): { value: number; label: string };
-  /** Offer a button per item to set an interlock setting to (item value - margin), rounded down to 5. */
-  cap?: { interlock: string; setting: string; margin: number; label(v: number): string };
+  reference(s: DeviceSnapshot, set: Record<string, number>): { value: number; label: string };
+  /** Offer a button per item to set a safety setting to (item value - margin), rounded down to 5. */
+  cap?: { setting: string; margin: number; label(v: number): string };
 }
 
-export type DeviceStatus = 'Interlock' | 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
+export type DeviceStatus = 'Safety stop' | 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
 
 export interface DeviceSnapshot {
   values: Record<string, number | undefined>;      // reading key -> value (net, after tare)
@@ -156,8 +213,16 @@ export interface DeviceDriver {
   hot?: { key: string; above: number };
   /** Reference lists under a caution icon on the card. */
   cautions?: CautionList[];
-  /** Software interlocks (see InterlockSpec). */
-  interlocks?: InterlockSpec[];
+  /**
+   * Capabilities this module brings to a page, e.g. ["stirrer", "overhead-stirrer"]. Other modules'
+   * safety rules use them to find partners (`SafetyRule.withPeer`), so match on what a unit does,
+   * not on its model name.
+   */
+  provides?: string[];
+  /** The module's folder under src/modules/, e.g. "ret-control-visc" (links the card to its README). */
+  source?: string;
+  /** Safety rules (see SafetyRule). Every module has this section, even if it lists no rules. */
+  safety?: ModuleSafety;
   releaseCommand?: string;       // sent when the device is removed (hand back to local control)
   watchdog?: { verified: boolean; arm(seconds: number): string };
   status(s: DeviceSnapshot): DeviceStatus;

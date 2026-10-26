@@ -7,7 +7,7 @@ import { liveChart } from './ui/chart';
 import { eventsCsv, runFileStem, samplesCsv } from './ui/csv';
 import { download, h, toast } from './ui/dom';
 import { devicePanel, hotText } from './ui/panel';
-import { getDriver } from './devices/registry';
+import { getDriver } from './modules';
 import type { CameraModule } from './camera/camera';
 import { cameraPanel, openAddCamera } from './ui/cameraPanel';
 import { mediaCsv, mediaZip } from './ui/mediaExport';

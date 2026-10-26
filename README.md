@@ -27,7 +27,7 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 ## What works now
 
 - Add, remove and reorder units on the control page (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
-- One card per unit, built from its driver: live readings, setpoints with read-back from the unit, on/off switches, a status word. Pump channels each get their own block and can be named.
+- One card per unit, built from its module: live readings, setpoints with read-back from the unit ("Set · actual"), on/off switches, a status word, and a **Safety** section with the module's rules live. Pump channels each get their own block and can be named.
 - **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
@@ -62,7 +62,7 @@ Each unit needs one click in the port picker the first time (Add device); after 
 ```bash
 npm install
 npm run dev            # local dev server (Web Serial works on localhost)
-npm test               # unit tests (drivers against the simulators, protocol formats)
+npm test               # unit tests (modules against their simulators, safety rules, protocol formats)
 npm run build          # type-check and build to dist/
 npm run manuals:fetch  # download device manuals into docs/manuals/ (not committed)
 npm run manuals:check  # look for new manual editions, dead links, overdue feature reviews
@@ -71,13 +71,16 @@ npm run manuals:index  # regenerate docs/MODULES.md from docs/modules.json
 
 Pushing to `main` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`). Every behaviour change also updates [docs/DESIGN.md](docs/DESIGN.md) in the same commit.
 
-### Adding a device model
+### Adding a device (module)
 
-1. Add it to `docs/modules.json` and create `docs/manuals/<id>/` from `_template/` ([how](docs/manuals/README.md#adding-a-device)).
-2. Write the driver in `src/devices/`: copy `eurostar60.ts` (IKA/NAMUR) or `regloIcc.ts` (other protocols, channels, derived values). A new wire protocol goes in `src/core/protocol.ts`. Add a simulator so it can be tested without hardware.
-3. Register it in `src/devices/registry.ts` and add a test in `src/test/`.
+Each device type is a **module**: one folder in `src/modules/` with its description, safety rules,
+simulator, tests and a README explaining how it is built. **[The module guide](src/modules/README.md)**
+walks through making one; copy [`src/modules/_template/`](src/modules/_template/) and read the
+[EUROSTAR module](src/modules/eurostar-60-control/) first, the smallest complete example.
 
-Panels, polling, chart, STOP ALL and recording pick it up automatically.
+In short: manual and notes first (`docs/modules.json`, `docs/manuals/<id>/`), copy the template, fill in
+`module.ts` and `safety.ts`, write the simulator and tests, register it in `src/modules/index.ts`.
+Cards, polling, chart, STOP ALL, recording and the safety engine pick it up automatically.
 
 ### Code map
 
@@ -90,8 +93,8 @@ Panels, polling, chart, STOP ALL and recording pick it up automatically.
 | `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings |
 | `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release |
 | `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
-| `src/devices/` | Drivers, registry, simulators (`simulator.ts` for IKA, `regloSim.ts` for the pump), `retInterlock.ts` (RET plate/probe interlock), `solvents.ts` (autoignition list for the hotplate card) |
+| `src/modules/` | One folder per device module (`module.ts`, `safety.ts`, `sim.ts`, tests, README), `_template/`, `shared/` (NAMUR simulator base, safety test helpers), `index.ts` (the list of modules), [`README.md`](src/modules/README.md) (the guide) |
 | `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |
 | `src/ui/` | Cards (devices, cameras), add device/camera, chart, bench terminal, CSV and zip export |
-| `src/test/` | Tests (vitest) |
+| `src/test/` | Tests of the shared core (vitest); module tests live in each module's folder |
 | `scripts/manuals.mjs` | Manual library: fetch, check, index |

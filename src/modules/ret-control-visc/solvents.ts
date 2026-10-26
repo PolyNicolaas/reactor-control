@@ -1,7 +1,8 @@
-import type { CautionList } from '../core/types';
-import { plateCutoff } from './retInterlock';
+import type { CautionList } from '../../core/types';
+import { plateCutoff } from './safety';
 
 // Autoignition temperatures of common lab solvents, for the hotplate caution list (DESIGN.md §15).
+// A module can carry reference lists like this (DeviceDriver.cautions); the card shows them under ⚠.
 // A hot surface at or above this temperature can ignite the vapour with no flame or spark.
 // Value = the LOWEST found across the sources below; sources differ by tens of degrees (acetonitrile:
 // 220 vs 524 °C). Checked 2026-10-26:
@@ -50,12 +51,11 @@ export const solventCaution: CautionList = {
   sources: 'Engineering ToolBox; ABB Hazlux ignition temperature table; Wikipedia; McMaster chemistry safety (checked 2026-10-26)',
   items: SOLVENT_AIT,
   nearBy: 50,
-  reference: (s, values) => {
-    const set = values('plate');
+  reference: (s, set) => {
     const cut = plateCutoff(s, set);
     const plate = s.values.plate;
     const ref = Math.max(cut, plate ?? -Infinity);
     return { value: ref, label: `Plate may reach ${Math.round(ref)} °C now (cut-off ${cut} °C${plate !== undefined ? `, plate ${Math.round(plate)} °C` : ''}); hard maximum ${set.plateMax} °C` };
   },
-  cap: { interlock: 'plate', setting: 'plateMax', margin: 20, label: (v) => `Cap plate at ${v} °C` },
+  cap: { setting: 'plateMax', margin: 20, label: (v) => `Cap plate at ${v} °C` },
 };

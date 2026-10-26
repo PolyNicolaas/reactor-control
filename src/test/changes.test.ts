@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DeviceInstance } from '../core/device';
-import { eurostar60 } from '../devices/eurostar60';
+import { eurostar60 } from '../modules/eurostar-60-control/module';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

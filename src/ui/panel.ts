@@ -2,7 +2,10 @@ import type { App } from '../core/app';
 import type { DeviceInstance } from '../core/device';
 import { decimalsFor, fmt, h, openDialog, toast } from './dom';
 import { openTerminal } from './terminal';
-import type { CautionList } from '../core/types';
+import type { CautionList, RuleState } from '../core/types';
+
+/** Where each module's folder (code + README) can be read. */
+const MODULES_URL = 'https://github.com/PolyNicolaas/reactor-control/tree/main/src/modules';
 
 /** One generic panel, drawn entirely from the device's driver description. */
 export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: DeviceInstance) => void): { el: HTMLElement; update: () => void; handle: HTMLElement } {
@@ -35,6 +38,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       h('button', { onclick: () => editLimits() }, 'Limits'),
       grouped && h('button', { onclick: () => editGroupNames() }, 'Channel names'),
       h('button', { onclick: () => openTerminal(app, dev) }, 'Bench terminal'),
+      d.source && h('a', { class: 'menu-link', href: `${MODULES_URL}/${d.source}`, target: '_blank', rel: 'noopener' }, 'How this module works ↗'),
       h('button', { class: 'danger-text', onclick: () => remove() }, 'Remove from page'),
     ),
   );
@@ -123,25 +127,26 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       return b;
   };
 
-  // Interlock: an alarm banner while tripped, and one line saying what is enforced.
-  const ilocks = d.interlocks ?? [];
+  // Safety: an alarm banner while a rule has tripped, and the module's rules live on the card.
+  const rules = d.safety?.rules ?? [];
+  const alarmTitle = h('strong', {});
   const alarmText = h('span', { class: 'alarm-text' });
-  const resetBtn = h('button', { type: 'button' }, 'Reset interlock') as HTMLButtonElement;
+  const resetBtn = h('button', { type: 'button' }, 'Reset safety stop') as HTMLButtonElement;
   resetBtn.addEventListener('click', () => {
     try {
-      for (const il of ilocks) dev.resetInterlock(il.key);
-      app.change(`${dev.label}: interlock reset`);
-      toast('Interlock reset. The heater can be switched on again.');
+      dev.resetSafety();
+      app.change(`${dev.label}: safety stop reset`);
+      toast('Safety stop reset. The unit can be switched on again.');
     } catch (e) {
       toast((e as Error).message, 'error');
     }
     update();
   });
-  const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, h('strong', {}, 'Heater locked out'), alarmText, resetBtn);
-  const guardLine = h('div', { class: 'guard-line' });
+  const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, alarmTitle, alarmText, resetBtn);
+  const safety = safetyBlock(dev, () => editLimits());
   const hotEl = h('span', { class: 'hot-badge', role: 'status', hidden: true });
   const cautions = (d.cautions ?? []).map((c) => cautionBlock(app, dev, c));
-  dev.tripped$.on((text) => toast(`INTERLOCK — ${text}`, 'error'));
+  dev.tripped$.on((text) => toast(`SAFETY STOP — ${text}`, 'error'));
 
   // Devices with groups (pump channels) get one compact block per group; others get the
   // classic row: tiles | setpoints | switches.
@@ -172,8 +177,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         h('div', { class: 'setpoints' }, ...d.setpoints.map(spRowFor)),
         h('div', { class: 'switches' }, ...d.switches.map(switchFor)),
       ];
-  if (ilocks.length) body.unshift(alarm), body.push(guardLine);
-  body.push(...cautions.map((c) => c.el));
+  body.unshift(alarm);
+  body.push(safety.el, ...cautions.map((c) => c.el));
 
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
@@ -255,12 +260,14 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       swEls[sw.key].classList.toggle('locked', !!lock);
       swEls[sw.key].title = lock ? `Locked out: ${lock}` : '';
     }
-    if (ilocks.length) {
-      const reasons = ilocks.map((il) => dev.tripped[il.key]).filter(Boolean);
-      alarm.hidden = !reasons.length;
-      alarmText.textContent = reasons.join(' · ');
-      guardLine.textContent = ilocks.map((il) => il.describe?.(dev.snapshot, dev.interlockValues(il.key), dev.interlockMemory(il.key)) ?? il.label).join(' · ');
+    const trips = rules.filter((r) => dev.tripped[r.key]);
+    alarm.hidden = !trips.length;
+    if (trips.length) {
+      const sws = [...new Set(trips.flatMap((r) => r.switches))].map((k) => d.switches.find((x) => x.key === k)?.label ?? k);
+      alarmTitle.textContent = `Safety stop · ${sws.join(', ')} locked out`;
+      alarmText.textContent = trips.map((r) => `${r.label}: ${dev.tripped[r.key]}`).join(' · ');
     }
+    safety.update();
     for (const g of d.groups ?? []) {
       groupTitleEls[g.key].textContent = dev.groupLabel(g.key) ?? g.label;
       groupEls[g.key].classList.toggle('is-on', d.switches.some((sw) => sw.group === g.key && dev.snapshot.switches[sw.key]));
@@ -284,13 +291,15 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         const i = h('input', { type: 'number', min: sp.min, max: sp.max, step: sp.step, value: dev.limits[sp.key] ?? '' }) as HTMLInputElement;
         return { sp, i };
       });
-      const ilInputs = ilocks.flatMap((il) =>
-        il.settings.map((st) => ({
-          k: `${il.key}.${st.key}`,
-          st,
-          i: h('input', { type: 'number', min: st.min, max: st.max, step: st.step, value: dev.interlockValues(il.key)[st.key] }) as HTMLInputElement,
-        })),
-      );
+      // Safety settings, grouped under the rule they belong to.
+      const values = dev.safetyValues();
+      const ruleInputs = rules
+        .filter((r) => r.settings?.length)
+        .map((r) => ({
+          r,
+          fields: r.settings!.map((st) => ({ st, i: h('input', { type: 'number', min: st.min, max: st.max, step: st.step, value: values[st.key] }) as HTMLInputElement })),
+        }));
+      const ilInputs = ruleInputs.flatMap((x) => x.fields);
       return h(
         'form',
         {
@@ -298,12 +307,16 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
           onsubmit: (e: Event) => {
             e.preventDefault();
             for (const { sp, i } of inputs) dev.limits[sp.key] = i.value === '' ? undefined : Math.min(Number(i.value), sp.max);
-            for (const { k, st, i } of ilInputs) {
+            const changed: string[] = [];
+            for (const { st, i } of ilInputs) {
+              const before = values[st.key];
               const v = Number(i.value);
-              if (i.value === '' || !Number.isFinite(v) || v === st.default) delete dev.interlockSettings[k];
-              else dev.interlockSettings[k] = Math.min(st.max, Math.max(st.min, v));
+              if (i.value === '' || !Number.isFinite(v) || v === st.default) delete dev.safetySettings[st.key];
+              else dev.safetySettings[st.key] = Math.min(st.max, Math.max(st.min, v));
+              const after = dev.safetySettings[st.key] ?? st.default;
+              if (after !== before) changed.push(`${st.label.toLowerCase()} ${before} → ${after} ${st.unit}`);
             }
-            if (ilInputs.length) app.change(`${dev.label}: interlock settings ${ilInputs.map(({ st, k }) => `${st.label.toLowerCase()} ${dev.interlockSettings[k] ?? st.default} ${st.unit}`).join(', ')}`);
+            if (changed.length) app.change(`${dev.label}: safety settings ${changed.join(', ')}`);
             app.save();
             update();
             close(true);
@@ -311,9 +324,12 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         },
         h('p', { class: 'hint' }, 'Setpoints above your limit are refused. Leave empty to use the device maximum.'),
         ...inputs.map(({ sp, i }) => h('label', {}, `Max ${sp.label.toLowerCase()} (${sp.unit}, device max ${sp.max})`, i)),
-        ilInputs.length > 0 && h('h3', {}, 'Heater interlock'),
-        ilInputs.length > 0 && h('p', { class: 'hint' }, 'The app switches the heater off and locks it out when a rule trips. It only works while this page is open; set the safety limit on the unit itself as the backstop.'),
-        ...ilInputs.map(({ st, i }) => h('label', {}, `${st.label} (${st.unit})`, i, st.hint && h('span', { class: 'hint' }, st.hint))),
+        ruleInputs.length > 0 && h('h3', {}, 'Safety rules'),
+        ruleInputs.length > 0 && h('p', { class: 'hint' }, 'When a rule trips, the app switches off what it guards and locks it out until you reset it on the card. This only works while this page is open and the unit answers; the unit\'s own limits are the backstop.'),
+        ...ruleInputs.flatMap(({ r, fields }) => [
+          h('h4', {}, r.label),
+          ...fields.map(({ st, i }) => h('label', {}, `${st.label} (${st.unit})`, i, st.hint && h('span', { class: 'hint' }, st.hint))),
+        ]),
         h('div', { class: 'actions' }, h('button', { class: 'primary', type: 'submit' }, 'Save')),
       );
     });
@@ -383,13 +399,13 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
   ) as HTMLDetailsElement;
   let lastKey = '';
   function update() {
-    const ref = c.reference(dev.snapshot, (k) => dev.interlockValues(k));
+    const ref = c.reference(dev.snapshot, dev.safetyValues());
     refEl.textContent = ref.label;
     const flagged = c.items.filter((it) => it.value <= ref.value).length;
     const near = c.items.filter((it) => it.value > ref.value && it.value <= ref.value + c.nearBy).length;
     count.textContent = flagged ? ` · ${flagged} at risk` : near ? ` · ${near} within ${c.nearBy} ${c.unit}` : '';
     el.dataset.level = flagged ? 'danger' : near ? 'near' : 'ok';
-    const capNow = c.cap ? dev.interlockValues(c.cap.interlock)[c.cap.setting] : undefined;
+    const capNow = c.cap ? dev.safetyValues()[c.cap.setting] : undefined;
     const key = `${Math.round(ref.value)}|${capNow}`;
     if (key === lastKey) return; // rebuild rows only when something visible changes
     lastKey = key;
@@ -399,7 +415,7 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
         let btn: HTMLElement | false = false;
         if (c.cap) {
           const capV = Math.floor((it.value - c.cap.margin) / 5) * 5;
-          const st = dev.driver.interlocks?.find((x) => x.key === c.cap!.interlock)?.settings.find((x) => x.key === c.cap!.setting);
+          const st = dev.driver.safety?.rules.flatMap((r) => r.settings ?? []).find((x) => x.key === c.cap!.setting);
           if (st && capNow !== undefined && capV < capNow && capV >= st.min) {
             btn = h('button', {
               type: 'button',
@@ -407,7 +423,7 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
               title: `Set "${st.label}" to ${capV} ${st.unit} (${c.cap.margin} ${st.unit} below ${it.name})`,
               onclick: () => {
                 if (!confirm(`Set "${st.label}" for ${dev.label} to ${capV} ${st.unit}, ${c.cap!.margin} ${st.unit} below the autoignition temperature of ${it.name}?`)) return;
-                dev.interlockSettings[`${c.cap!.interlock}.${c.cap!.setting}`] = capV;
+                dev.safetySettings[c.cap!.setting] = capV;
                 app.change(`${dev.label}: ${st.label.toLowerCase()} set to ${capV} ${st.unit} for ${it.name}`);
                 app.save();
                 toast(`${st.label}: ${capV} ${st.unit}`);
@@ -419,6 +435,60 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
         return h('tr', { 'data-level': level }, h('td', {}, it.name), h('td', { class: 'num' }, String(it.value)), h('td', { class: 'note' }, it.note ?? ''), c.cap ? h('td', {}, btn) : false);
       }),
     );
+  }
+  return { el, update };
+}
+
+const STATE_LABEL: Record<RuleState, string> = { off: 'Off', idle: 'Idle', learning: 'Learning', ok: 'OK', near: 'Close', trip: 'STOP' };
+
+/**
+ * The module's safety rules, live: one row per rule with its state, its numbers, and (on demand) why it
+ * exists. Every card has this section, so anyone can see what guards the unit and how close it is.
+ */
+function safetyBlock(dev: DeviceInstance, openSettings: () => void): { el: HTMLElement; update: () => void } {
+  const rules = dev.driver.safety?.rules ?? [];
+  const sum = h('span', { class: 'safety-sum' });
+  const line = h('span', { class: 'safety-line' });
+  const rows: { el: HTMLElement; chip: HTMLElement; text: HTMLElement; key: string }[] = [];
+  const list = h('div', { class: 'safety-rules' });
+  for (const r of rules) {
+    const chip = h('span', { class: 'rule-chip' });
+    const text = h('span', { class: 'rule-text' });
+    const el = h(
+      'details',
+      { class: 'rule' },
+      h('summary', {}, chip, h('span', { class: 'rule-label' }, r.label, r.withPeer ? h('span', { class: 'rule-peer', title: `Watches any module that provides "${r.withPeer}"` }, ` with ${r.withPeer}`) : false), text),
+      h('p', { class: 'rule-why' }, r.why),
+    );
+    rows.push({ el, chip, text, key: r.key });
+    list.append(el);
+  }
+  const el = h(
+    'details',
+    { class: 'safety' },
+    h('summary', {}, h('span', { class: 'safety-icon', 'aria-hidden': 'true' }, '⛨'), h('span', {}, 'Safety'), sum, line),
+    rules.length
+      ? list
+      : h('p', { class: 'hint' }, 'This module has no safety rules yet. See src/modules/README.md for how to add one.'),
+    rules.some((r) => r.settings?.length) ? h('div', { class: 'safety-actions' }, h('button', { type: 'button', class: 'small', onclick: openSettings }, 'Safety settings…')) : false,
+  ) as HTMLDetailsElement;
+  function update() {
+    const counts: Partial<Record<RuleState, number>> = {};
+    for (const row of rows) {
+      const st = dev.ruleStatus[row.key] ?? { state: 'idle' as RuleState, text: dev.connected ? 'Waiting for the first poll' : 'Not connected' };
+      const state = dev.tripped[row.key] ? 'trip' : st.state;
+      counts[state] = (counts[state] ?? 0) + 1;
+      row.el.dataset.state = state;
+      row.chip.textContent = STATE_LABEL[state];
+      row.text.textContent = dev.tripped[row.key] ?? st.text;
+    }
+    const armed = rules.length - (counts.off ?? 0);
+    sum.textContent = !rules.length
+      ? ' · no rules'
+      : counts.trip ? ` · ${counts.trip} STOPPED` : counts.near ? ` · ${counts.near} close to stopping` : ` · ${armed} of ${rules.length} rules on · all OK`;
+    el.dataset.state = counts.trip ? 'trip' : counts.near ? 'near' : 'ok';
+    const sumFn = dev.driver.safety?.summary;
+    line.textContent = sumFn ? ` · ${sumFn(dev.snapshot, dev.safetyValues())}` : '';
   }
   return { el, update };
 }

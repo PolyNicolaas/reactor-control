@@ -3,7 +3,7 @@
 **Manual:** `<file name>.pdf` — <publisher document number>, <date>, <language>, <pages> pages.
 **Source:** <URL>
 **SHA-256:** `<sha256sum of the PDF>`
-**Driver:** [`src/devices/<model>.ts`](../../../src/devices/)
+**Module:** [`src/modules/<id>/`](../../../src/modules/) (copy `src/modules/_template/`)
 
 ## Key facts
 
