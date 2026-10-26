@@ -6,7 +6,7 @@ Manual facts with pages: [`docs/manuals/reglo-icc/notes.md`](../../../docs/manua
 
 | File | What it shows |
 | --- | --- |
-| [`module.ts`](module.ts) | `protocol: ISMATEC` (acknowledged writes, `*`/`#`), `initCommands`, number formats (`formatSetpoint`, `parse`), `groups` (one block per channel), `derive()` (flow and dispensed computed by the app). |
+| [`module.ts`](module.ts) | `protocol: ISMATEC` (acknowledged writes, `*`/`#`), `initCommands`, number formats (`formatSetpoint`, `parse`), `groups` (one function per channel, `channel: true` so they can be renamed, plus *All channels* for the pump-wide rule), `derive()` (flow and dispensed computed by the app). |
 | [`safety.ts`](safety.ts) | Rules built in a loop, one per channel; one rule that watches any `stirrer`. |
 | [`sim.ts`](sim.ts) | Its own transport (not the NAMUR simulator): the Ismatec replies, thinner tubing on channel 2. |
 | [`reglo-icc.test.ts`](reglo-icc.test.ts) | Number formats against the manual's examples, the driver against the simulator, both safety rules. |

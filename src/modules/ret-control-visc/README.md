@@ -7,7 +7,7 @@ The safety design is described in full in [`docs/DESIGN.md` §15](../../../docs/
 
 | File | What it shows |
 | --- | --- |
-| [`module.ts`](module.ts) | Readings valid only in some states (`validWhen`), a reading the unit gives only after a keypress (`optional`), software tare (`tareable`, `stable`), `hot`, `cautions`. |
+| [`module.ts`](module.ts) | Three functions (Heating, Stirring, Weighing), each its own card section. Readings valid only in some states (`validWhen`), a reading the unit gives only after a keypress (`optional`), software tare (`tareable`, `stable`), `hot`, `cautions`. |
 | [`safety.ts`](safety.ts) | Seven rules: two static limits, four that read history (one learns), one that watches another module. Shared helpers at the top. |
 | [`solvents.ts`](solvents.ts) | A caution list: data with sources, flagged against live values, with a one-click adjustment. |
 | [`sim.ts`](sim.ts) | Plate driven by how far the probe is from setpoint, like the unit; `SIM_PROBE_OUT 1` reproduces the runaway the rules must catch. |

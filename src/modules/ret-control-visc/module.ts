@@ -20,6 +20,13 @@ export const retControlVisc: DeviceDriver = {
   identify: (name) => /\bRET\b|IKARET/i.test(name),
   provides: ['hotplate', 'heater', 'stirrer', 'magnetic-stirrer'],
 
+  // Functions: the card is drawn as one section per function, and methods address them.
+  groups: [
+    { key: 'heating', label: 'Heating' },
+    { key: 'stirring', label: 'Stirring' },
+    { key: 'weighing', label: 'Weighing' },
+  ],
+
   // 2. Connection
   serial: NAMUR_SERIAL,
   lineEnd: '\r\n',
@@ -27,17 +34,17 @@ export const retControlVisc: DeviceDriver = {
   // 3. Readings. pH (IN_PV_80) is not polled: it needs the pH electrode fitted, and the unit returns a
   //    plausible number without one (bench 2026-10-22).
   readings: [
-    { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
-    { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true },
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, activity: { name: 'stirring', above: 20, switchKey: 'stirrer' } },
-    { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true },
+    { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true, group: 'heating' },
+    { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true, group: 'heating' },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, group: 'stirring', activity: { name: 'stirring', above: 20, switchKey: 'stirrer' } },
+    { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true, group: 'stirring' },
     // The hardware cut-off, set on the unit itself. The app only reads it.
-    { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3' },
+    { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3', group: 'heating' },
     // Built-in balance: 10–5000 g, accuracy ±(0.3 % + 2 g) (manual p. 35). The device only weighs
     // with heating and stirring off (p. 25), so readings at other times are shown and recorded as blank.
     // The app tares in software; the manual lists no tare command.
     {
-      key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, tareable: true, decimals: 0,
+      key: 'mass', label: 'Mass', unit: 'g', cmd: 'IN_PV_90', chart: true, primary: true, tareable: true, decimals: 0, group: 'weighing',
       // Bench 2026-10-22: outside weighing mode IN_PV_90 answers "0.0 90"; in weighing mode the mass
       // ("122.0 90"). So exactly 0 is treated as "not weighing". Whole grams only.
       optional: { retryMs: 3000, missingNote: 'Press the weighing key (G) on the RET and wait for it to settle', zeroMeansMissing: true },
@@ -52,18 +59,18 @@ export const retControlVisc: DeviceDriver = {
   setpoints: [
     {
       key: 'temp', label: 'Temperature', unit: '°C', cmd: 'OUT_SP_1', readCmd: 'IN_SP_1',
-      min: 0, max: 340, step: 1, decimals: 1, tolerance: 0.5, actualKey: 'probe', switchKey: 'heater', graceS: 90,
+      min: 0, max: 340, step: 1, decimals: 1, tolerance: 0.5, actualKey: 'probe', switchKey: 'heater', graceS: 90, group: 'heating',
     },
     {
       key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'OUT_SP_4', readCmd: 'IN_SP_4',
-      min: 50, max: 1700, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed', switchKey: 'stirrer',
+      min: 50, max: 1700, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed', switchKey: 'stirrer', group: 'stirring',
     },
   ],
 
   // 5. Switches
   switches: [
-    { key: 'heater', label: 'Heater', on: 'START_1', off: 'STOP_1', confirmOn: 'Turn the heater on?' },
-    { key: 'stirrer', label: 'Stirrer', on: 'START_4', off: 'STOP_4' },
+    { key: 'heater', label: 'Heater', on: 'START_1', off: 'STOP_1', confirmOn: 'Turn the heater on?', group: 'heating' },
+    { key: 'stirrer', label: 'Stirrer', on: 'START_4', off: 'STOP_4', group: 'stirring' },
   ],
 
   // 6. Stop and release

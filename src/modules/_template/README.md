@@ -5,7 +5,7 @@ Copy this folder to `src/modules/<module-id>/` to start a new module, then follo
 
 | File | Fill in |
 | --- | --- |
-| `module.ts` | The nine sections, in order: identity, connection, readings, setpoints, switches, stop and release, status, safety, simulator. |
+| `module.ts` | The nine sections, in order: identity (with the unit's functions), connection, readings, setpoints, switches, stop and release, status, safety, simulator. Put every reading, setpoint and switch in a function with `group`. |
 | `safety.ts` | One rule per way the unit can hurt someone or ruin a reaction. Two examples: a static limit, and a rule that watches another module (`withPeer`). |
 | `sim.ts` | The unit's physics on top of the shared NAMUR simulator (or your own transport for another protocol). |
 | `template.test.ts` | Rename to `<module-id>.test.ts`. One simulator test; for every rule, one case that trips and one that must not. |

@@ -19,6 +19,10 @@ export const templateModule: DeviceDriver = {
   // What this unit does for a page. Other modules' safety rules look for these words (README table).
   provides: ['heater'],
 
+  // Functions: one card section each, and what a method addresses. Put every reading, setpoint and
+  // switch in one with `group`; safety rules join the function of the switch they stop.
+  groups: [{ key: 'heating', label: 'Heating' }],
+
   // 2. Connection ───────────────────────────────────────────────────────────────────────────────
   serial: NAMUR_SERIAL,            // 9600 7E1 for IKA; otherwise the manual's settings
   lineEnd: '\r\n',
@@ -26,7 +30,7 @@ export const templateModule: DeviceDriver = {
 
   // 3. Readings ─────────────────────────────────────────────────────────────────────────────────
   readings: [
-    { key: 'temp', label: 'Block', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
+    { key: 'temp', label: 'Block', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true, group: 'heating' },
     // { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, activity: { name: 'stirring', above: 20 } },
   ],
 
@@ -38,11 +42,12 @@ export const templateModule: DeviceDriver = {
       actualKey: 'temp',           // the reading this setpoint drives
       switchKey: 'heater',         // the switch that makes the unit act on it
       graceS: 90,                  // temperatures move slowly: wait before calling it "not following"
+      group: 'heating',
     },
   ],
 
   // 5. Switches ─────────────────────────────────────────────────────────────────────────────────
-  switches: [{ key: 'heater', label: 'Heater', on: 'START_1', off: 'STOP_1', confirmOn: 'Turn the heater on?' }],
+  switches: [{ key: 'heater', label: 'Heater', on: 'START_1', off: 'STOP_1', confirmOn: 'Turn the heater on?', group: 'heating' }],
 
   // 6. Stop and release ─────────────────────────────────────────────────────────────────────────
   stopCommands: ['STOP_1'],

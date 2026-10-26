@@ -31,6 +31,7 @@ const noStirring: SafetyRule = {
   label: 'Dose only while stirring',
   why: 'Reagent added to an unstirred flask pools, then reacts all at once when stirring resumes (runaway exotherm). With a stirrer on the page, every channel stops when nothing is stirring. Any module that provides "stirrer" counts: an overhead stirrer or the hotplate\'s magnetic stirrer.',
   switches: CHANNELS.map((n) => `run${n}`),
+  group: 'pump', // stops every channel, so it sits in the pump-wide section, not in Ch 1
   withPeer: 'stirrer',
   watchesActivity: 'stirring',
   watchNote: 'When nothing on the page has stirred for {noStirS} s, the pump stops dosing.',

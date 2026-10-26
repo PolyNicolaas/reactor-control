@@ -41,7 +41,7 @@
 | `OUT_MODE_n` (n = 1, 2) | Change direction of rotation | — | manual |
 | `IN_MODE` | Read direction of rotation | — | manual |
 
-No watchdog command is listed for this model, so a crashed browser does not stop the motor on its own. The app should stop it explicitly, and a reaction program's end action should include `STOP_4`.
+No watchdog command is listed for this model, so a crashed browser does not stop the motor on its own. The app should stop it explicitly, and a reaction method's end action should include `STOP_4`.
 
 ## Possible features
 

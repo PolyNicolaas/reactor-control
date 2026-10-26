@@ -51,6 +51,7 @@ export const solventCaution: CautionList = {
   sources: 'Engineering ToolBox; ABB Hazlux ignition temperature table; Wikipedia; McMaster chemistry safety (checked 2026-10-26)',
   items: SOLVENT_AIT,
   nearBy: 50,
+  group: 'heating',
   reference: (s, set) => {
     const cut = plateCutoff(s, set);
     const plate = s.values.plate;

@@ -37,7 +37,8 @@ docs/manuals/<module-id>/notes.md   facts from the manual, each with its page (k
    goes in the code that is not in the notes.
 2. **Copy `_template/`** to `src/modules/<module-id>/` and rename the exported names.
 3. **Fill in `module.ts` section by section** (the template has the sections in this order):
-   1. *Identity* — `model`, `displayName`, `kind`, `source` (the folder name), `identify()` (match the
+   1. *Identity* — `model`, `displayName`, `kind`, `source` (the folder name), `groups` (the unit's
+      **functions**, see below), `identify()` (match the
       reply to the identify command), and `provides`: what the unit **does** for a page, e.g.
       `['stirrer', 'overhead-stirrer']`. Other modules' safety rules find partners by these words, never
       by model name. Reuse an existing word when the unit does the same job; that is what lets a new
@@ -67,6 +68,23 @@ docs/manuals/<module-id>/notes.md   facts from the manual, each with its page (k
 8. **Write the module's `README.md`**: what the unit is, how the app drives it, each choice and why,
    what is still to check on the bench. Update `docs/DESIGN.md` (§5 decision; §15 if it adds safety rules).
 9. `npm test`, `npm run build`, then try it on the bench and record what you learn in `notes.md`.
+
+## Functions
+
+A unit does one or more jobs: the RET heats, stirs and weighs; a pump has four channels. Each job is a
+**function**, declared in `groups` and joined by every reading, setpoint and switch with `group`:
+
+```ts
+groups: [{ key: 'heating', label: 'Heating' }, { key: 'stirring', label: 'Stirring' }],
+readings: [{ key: 'probe', …, group: 'heating' }, { key: 'speed', …, group: 'stirring' }],
+```
+
+The card draws one section per function holding everything about it — readings, setpoint with
+set-vs-actual, its switch, its safety rules (a rule joins the function of the switch it stops, or set
+`group` on the rule), caution lists (`group` on the list), and *Watched by*. Methods address a function
+(`heater` role → *Hotplate › Heating*), so keep function keys stable once used. Repeated channels of the
+same kind (pump channels) set `channel: true`: the user can rename them and their names prefix labels on
+the chart and in recordings. Anything left without a function goes into a last "Unit" section.
 
 ## Safety rules
 

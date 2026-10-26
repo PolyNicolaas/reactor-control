@@ -2,7 +2,7 @@ import type { App } from '../core/app';
 import type { DeviceInstance } from '../core/device';
 import { decimalsFor, fmt, h, openDialog, toast } from './dom';
 import { openTerminal } from './terminal';
-import type { CautionList, RuleState } from '../core/types';
+import type { CautionList, FunctionGroup, RuleState, SafetyRule } from '../core/types';
 
 /** Where each module's folder (code + README) can be read. */
 const MODULES_URL = 'https://github.com/PolyNicolaas/reactor-control/tree/main/src/modules';
@@ -23,7 +23,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const swEls: Record<string, HTMLButtonElement> = {};
   const groupTitleEls: Record<string, HTMLElement> = {};
   const groupEls: Record<string, HTMLElement> = {};
-  const grouped = !!d.groups?.length;
+  const channels = (d.groups ?? []).filter((g) => g.channel);
 
   const menu = h(
     'details',
@@ -36,7 +36,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       h('button', { onclick: () => { menu.open = false; app.moveDevice(dev, app.devices.indexOf(dev) + 1); } }, 'Move down'),
       h('button', { onclick: () => rename() }, 'Rename'),
       h('button', { onclick: () => editLimits() }, 'Limits'),
-      grouped && h('button', { onclick: () => editGroupNames() }, 'Channel names'),
+      channels.length > 0 && h('button', { onclick: () => editGroupNames() }, 'Channel names'),
       h('button', { onclick: () => openTerminal(app, dev) }, 'Bench terminal'),
       d.source && h('a', { class: 'menu-link', href: `${MODULES_URL}/${d.source}`, target: '_blank', rel: 'noopener' }, 'How this module works ↗'),
       h('button', { class: 'danger-text', onclick: () => remove() }, 'Remove from page'),
@@ -130,7 +130,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       return b;
   };
 
-  // Safety: an alarm banner while a rule has tripped, and the module's rules live on the card.
+  // Safety: an alarm banner while a rule has tripped, a summary chip in the header, and each
+  // function's rules inside its section.
   const rules = d.safety?.rules ?? [];
   const alarmTitle = h('strong', {});
   const alarmText = h('span', { class: 'alarm-text' });
@@ -146,42 +147,61 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     update();
   });
   const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, alarmTitle, alarmText, resetBtn);
-  const safety = safetyBlock(app, dev);
   const hotEl = h('span', { class: 'hot-badge', role: 'status', hidden: true });
-  const cautions = (d.cautions ?? []).map((c) => cautionBlock(app, dev, c));
+  const safetyChip = h('span', { class: 'safety-chip', title: 'Safety rules on this unit' });
   dev.tripped$.on((text) => toast(`SAFETY STOP — ${text}`, 'error'));
 
-  // Devices with groups (pump channels) get one compact block per group; others get the
-  // classic row: tiles | setpoints | switches.
-  const body: (HTMLElement | false)[] = grouped
-    ? [
-        h(
-          'div',
-          { class: 'groups' },
-          ...d.groups!.map((g) => {
-            const title = h('span', { class: 'group-title' }, dev.groupLabel(g.key) ?? g.label);
-            groupTitleEls[g.key] = title;
-            const block = h(
-              'div',
-              { class: 'group' },
-              h('div', { class: 'group-head' }, h('span', { class: 'dot' }), title),
-              h('div', { class: 'tiles' }, ...shownReadings.filter((r) => r.group === g.key).map(tileFor)),
-              ...d.setpoints.filter((sp) => sp.group === g.key).map(spRowFor),
-              ...d.switches.filter((sw) => sw.group === g.key).map(switchFor),
-            );
-            groupEls[g.key] = block;
-            return block;
-          }),
-        ),
-        shownReadings.some((r) => !r.group) && h('div', { class: 'tiles' }, ...shownReadings.filter((r) => !r.group).map(tileFor)),
-      ]
-    : [
-        h('div', { class: 'tiles' }, ...shownReadings.map(tileFor)),
-        h('div', { class: 'setpoints' }, ...d.setpoints.map(spRowFor)),
-        h('div', { class: 'switches' }, ...d.switches.map(switchFor)),
-      ];
-  body.unshift(alarm);
-  body.push(safety.el, ...cautions.map((c) => c.el));
+  // ── Functions ───────────────────────────────────────────────────────────────────────────────────
+  // One section per function of the unit (Heating, Stirring, Weighing; pump channels), holding
+  // everything about it: readings, setpoint, switch, safety rules, caution lists, and the rules on
+  // other units that watch it. These are also what methods address ("Hotplate › Heating › Temperature").
+  // Anything a module did not put in a function goes in a last "Unit" section.
+  const fnDefs: FunctionGroup[] = [...(d.groups ?? [])];
+  const restKey = '_unit';
+  const fnOf = (g?: string) => (g && fnDefs.some((x) => x.key === g) ? g : restKey);
+  const ruleFn = (r: SafetyRule) => fnOf(r.group ?? d.switches.find((x) => x.key === r.switches[0])?.group);
+  const cautionSpecs = d.cautions ?? [];
+  const inFn = (k: string) =>
+    shownReadings.some((r) => fnOf(r.group) === k) ||
+    d.setpoints.some((sp) => fnOf(sp.group) === k) ||
+    d.switches.some((sw) => fnOf(sw.group) === k) ||
+    rules.some((r) => ruleFn(r) === k) ||
+    cautionSpecs.some((c) => fnOf(c.group) === k);
+  if (inFn(restKey)) fnDefs.push({ key: restKey, label: fnDefs.length ? 'Unit' : d.kind });
+  const firstFn = fnDefs.find((f) => inFn(f.key))?.key;
+  const sectionUpdates: (() => void)[] = [];
+
+  const sections = fnDefs.filter((f) => inFn(f.key)).map((f) => {
+    const title = h('span', { class: 'fn-title' }, dev.groupLabel(f.key) ?? f.label);
+    groupTitleEls[f.key] = title;
+    const sws = d.switches.filter((sw) => fnOf(sw.group) === f.key).map(switchFor);
+    const tiles = shownReadings.filter((r) => fnOf(r.group) === f.key).map(tileFor);
+    const sps = d.setpoints.filter((sp) => fnOf(sp.group) === f.key).map(spRowFor);
+    const rb = rulesBlock(app, dev, rules.filter((r) => ruleFn(r) === f.key));
+    const cbs = cautionSpecs.filter((c) => fnOf(c.group) === f.key).map((c) => cautionBlock(app, dev, c));
+    // Rules elsewhere that watch an activity of this function (stirring); others go to the first section.
+    const acts = d.readings.filter((r) => fnOf(r.group) === f.key && r.activity).map((r) => r.activity!.name);
+    const wb = watchedBlock(dev, (w) => (w.rule.watchesActivity ? acts.includes(w.rule.watchesActivity) : f.key === firstFn));
+    sectionUpdates.push(() => {
+      rb?.update();
+      for (const c of cbs) c.update();
+      wb.update();
+    });
+    const section = h(
+      'section',
+      { class: 'fn', 'data-fn': f.key },
+      h('header', { class: 'fn-head' }, h('span', { class: 'dot', 'aria-hidden': 'true' }), title, sws.length ? h('div', { class: 'fn-switches' }, ...sws) : false),
+      tiles.length ? h('div', { class: 'tiles' }, ...tiles) : false,
+      ...sps,
+      rb ? rb.el : false,
+      ...cbs.map((c) => c.el),
+      wb.el,
+    );
+    groupEls[f.key] = section;
+    return section;
+  });
+
+  const body: (HTMLElement | false)[] = [alarm, h('div', { class: 'fns' }, ...sections)];
 
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
@@ -189,14 +209,13 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const handle = h('button', { class: 'handle', 'aria-label': `Drag to reorder ${dev.label}`, title: 'Drag to reorder' }, '⠿');
   const el = h(
     'section',
-    { class: `panel${grouped ? ' is-grouped' : ''}`, style: `--dev:${dev.color}`, 'data-id': dev.id },
+    { class: 'panel device-panel', style: `--dev:${dev.color}`, 'data-id': dev.id },
     h(
       'header',
       {},
       handle,
       h('div', { class: 'dev-title' }, titleEl, h('span', { class: 'dev-model' }, `${d.displayName}${dev.transport.kind === 'sim' ? ' · simulated' : ''}`)),
-      hotEl,
-      statusEl,
+      h('div', { class: 'dev-badges' }, hotEl, statusEl, rules.length ? safetyChip : false),
       menu,
     ),
     ...body,
@@ -215,7 +234,6 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     hotEl.dataset.state = hs?.state ?? '';
     hotEl.title = hs ? 'The plate is hot. Do not touch it, even with the heater off.' : '';
     el.classList.toggle('is-hot', !!hs);
-    for (const c of cautions) c.update();
     for (const r of shownReadings) {
       const valid = dev.isValid(r.key);
       const dec = r.decimals ?? decimalsFor(r.unit);
@@ -270,10 +288,22 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       alarmTitle.textContent = `Safety stop · ${sws.join(', ')} locked out`;
       alarmText.textContent = trips.map((r) => `${r.label}: ${dev.tripped[r.key]}`).join(' · ');
     }
-    safety.update();
-    for (const g of d.groups ?? []) {
-      groupTitleEls[g.key].textContent = dev.groupLabel(g.key) ?? g.label;
-      groupEls[g.key].classList.toggle('is-on', d.switches.some((sw) => sw.group === g.key && dev.snapshot.switches[sw.key]));
+    for (const f of fnDefs) {
+      if (!groupEls[f.key]) continue;
+      groupTitleEls[f.key].textContent = dev.groupLabel(f.key) ?? f.label;
+      groupEls[f.key].classList.toggle('is-on', d.switches.some((sw) => fnOf(sw.group) === f.key && dev.snapshot.switches[sw.key]));
+      groupEls[f.key].classList.toggle('is-tripped', rules.some((r) => ruleFn(r) === f.key && dev.tripped[r.key]));
+    }
+    for (const u of sectionUpdates) u();
+    // Header chip: the worst state across the unit's rules.
+    if (rules.length) {
+      const states = rules.map((r) => (dev.tripped[r.key] ? 'trip' : dev.isRuleOn(r) ? dev.ruleStatus[r.key]?.state ?? 'idle' : 'off'));
+      const n = (s: RuleState) => states.filter((x) => x === s).length;
+      const worst: RuleState = n('trip') ? 'trip' : n('near') ? 'near' : 'ok';
+      safetyChip.dataset.state = worst;
+      safetyChip.textContent = worst === 'trip' ? `⛨ ${n('trip')} tripped` : worst === 'near' ? `⛨ ${n('near')} close` : n('ok') ? `⛨ ${n('ok')} active` : '⛨ standby';
+      const sumFn = d.safety?.summary;
+      safetyChip.title = `Safety: ${rules.filter((r) => dev.isRuleOn(r)).length} of ${rules.length} rules on, ${n('ok')} active${sumFn ? ` · ${sumFn(dev.snapshot, dev.safetyValues())}` : ''}`;
     }
   }
 
@@ -317,7 +347,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   async function editGroupNames() {
     menu.open = false;
     await openDialog(`Channel names — ${dev.label}`, (close) => {
-      const inputs = d.groups!.map((g) => ({ g, i: h('input', { type: 'text', placeholder: g.label, value: dev.groupLabels[g.key] ?? '' }) as HTMLInputElement }));
+      const inputs = channels.map((g) => ({ g, i: h('input', { type: 'text', placeholder: g.label, value: dev.groupLabels[g.key] ?? '' }) as HTMLInputElement }));
       return h(
         'form',
         {
@@ -333,7 +363,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
             close(true);
           },
         },
-        h('p', { class: 'hint' }, 'Name each channel after what it pumps, e.g. "Reagent A". Names show on the card, the chart and in recordings. Programs still address channels as ch1, ch2…'),
+        h('p', { class: 'hint' }, 'Name each channel after what it pumps, e.g. "Reagent A". Names show on the card, the chart and in recordings. Methods still address channels as ch1, ch2…'),
         ...inputs.map(({ g, i }) => h('label', {}, g.label, i)),
         h('div', { class: 'actions' }, h('button', { class: 'primary', type: 'submit' }, 'Save')),
       );
@@ -430,17 +460,16 @@ const STATE_HINT: Record<RuleState, string> = {
 };
 
 /**
- * The module's safety rules, live. One row per rule: state, name, on/off toggle, live numbers; open
- * the row for why it exists, what it stops, which module it watches, and its settings (edited in
- * place, logged). Below, "Watched by": rules on OTHER modules of this page that depend on this one.
+ * Safety rules of one function, live. One row per rule: state, name, on/off toggle, live line; open the
+ * row for why it exists, what it stops, which module it watches, and its settings (edited in place, logged).
+ * Returns null when the function has no rules.
  */
-function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: () => void } {
+function rulesBlock(app: App, dev: DeviceInstance, rules: SafetyRule[]): { el: HTMLElement; update: () => void } | null {
+  if (!rules.length) return null;
   const d = dev.driver;
-  const rules = d.safety?.rules ?? [];
   const sum = h('span', { class: 'safety-sum' });
-  const line = h('span', { class: 'safety-line' });
   const swLabel = (k: string) => d.switches.find((x) => x.key === k)?.label ?? k;
-  const rows: { el: HTMLElement; chip: HTMLElement; text: HTMLElement; toggle: HTMLInputElement; watches?: HTMLElement; inputs: Record<string, HTMLInputElement>; key: string }[] = [];
+  const rows: { el: HTMLElement; chip: HTMLElement; text: HTMLElement; toggle: HTMLInputElement; watches?: HTMLElement; inputs: Record<string, HTMLInputElement>; rule: SafetyRule }[] = [];
   const list = h('div', { class: 'safety-rules' });
 
   for (const r of rules) {
@@ -449,8 +478,7 @@ function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: 
     const toggle = h('input', { type: 'checkbox', role: 'switch', 'aria-label': `${r.label} on/off` }) as HTMLInputElement;
     toggle.disabled = !!r.required;
     toggle.title = r.required ? 'Always on: this rule is the floor the others build on' : 'Turn this rule on or off';
-    // The toggle sits in the row's summary: keep a click on it from opening the row.
-    toggle.addEventListener('click', (e) => e.stopPropagation());
+    toggle.addEventListener('click', (e) => e.stopPropagation()); // don't open the row
     toggle.addEventListener('change', () => {
       const on = toggle.checked;
       if (!on && !confirm(`Turn off "${r.label}" on ${dev.label}?\n\n${r.why}`)) {
@@ -471,7 +499,7 @@ function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: 
     const settingEls = (r.settings ?? []).map((st) => {
       const i = h('input', { type: 'number', min: st.min, max: st.max, step: st.step, 'aria-label': st.label }) as HTMLInputElement;
       inputs[st.key] = i;
-      const apply = () => {
+      i.addEventListener('change', () => {
         const before = dev.safetyValues()[st.key];
         try {
           const v = dev.setSafetySetting(st.key, Number(i.value));
@@ -484,8 +512,7 @@ function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: 
           i.value = String(before);
           toast((e as Error).message, 'error');
         }
-      };
-      i.addEventListener('change', apply);
+      });
       i.addEventListener('keydown', (e) => e.key === 'Enter' && i.blur());
       return h('label', { class: 'rule-setting' }, h('span', {}, st.label), h('span', { class: 'rule-input' }, i, h('span', { class: 'unit' }, st.unit)), st.hint && h('span', { class: 'hint' }, st.hint));
     });
@@ -510,73 +537,71 @@ function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: 
         settingEls.length ? h('div', { class: 'rule-settings' }, ...settingEls) : false,
       ),
     );
-    rows.push({ el, chip, text, toggle, watches, inputs, key: r.key });
+    rows.push({ el, chip, text, toggle, watches, inputs, rule: r });
     list.append(el);
   }
-
-  const watchedList = h('div', { class: 'watched-list' });
-  const watched = h('div', { class: 'watched', hidden: true }, h('h4', {}, 'Watched by'), h('p', { class: 'hint' }, 'Rules on other units of this page that depend on this one.'), watchedList);
 
   const el = h(
     'details',
     { class: 'safety' },
-    h('summary', {}, h('span', { class: 'safety-icon', 'aria-hidden': 'true' }, '⛨'), h('span', {}, 'Safety'), sum, line),
-    rules.length ? list : h('p', { class: 'hint' }, 'This module has no safety rules yet. See src/modules/README.md for how to add one.'),
-    watched,
+    h('summary', {}, h('span', { class: 'safety-icon', 'aria-hidden': 'true' }, '⛨'), h('span', {}, 'Safety'), sum),
+    list,
   ) as HTMLDetailsElement;
 
-  let watchedKey = '';
   function update() {
     const counts: Partial<Record<RuleState, number>> = {};
     const set = dev.safetyValues();
     for (const row of rows) {
-      const rule = rules.find((r) => r.key === row.key)!;
-      const on = dev.isRuleOn(rule);
-      const st = dev.ruleStatus[row.key] ?? { state: (on ? 'idle' : 'off') as RuleState, text: on ? (dev.connected ? 'Waiting for the first poll' : 'Not connected') : 'Turned off' };
-      const state: RuleState = dev.tripped[row.key] ? 'trip' : on ? st.state : 'off';
+      const on = dev.isRuleOn(row.rule);
+      const st = dev.ruleStatus[row.rule.key] ?? { state: (on ? 'idle' : 'off') as RuleState, text: on ? (dev.connected ? 'Waiting for the first poll' : 'Not connected') : 'Turned off' };
+      const state: RuleState = dev.tripped[row.rule.key] ? 'trip' : on ? st.state : 'off';
       counts[state] = (counts[state] ?? 0) + 1;
       row.el.dataset.state = state;
       row.chip.textContent = STATE_LABEL[state];
       row.chip.title = STATE_HINT[state];
-      row.text.textContent = dev.tripped[row.key] ?? st.text;
+      row.text.textContent = dev.tripped[row.rule.key] ?? st.text;
       row.toggle.checked = on;
       for (const [k, i] of Object.entries(row.inputs)) if (document.activeElement !== i) i.value = String(set[k]);
       if (row.watches) {
-        const peers = dev.peers().filter((p) => p !== dev && (p.driver.provides ?? []).includes(rule.withPeer!));
+        const peers = dev.peers().filter((p) => p !== dev && (p.driver.provides ?? []).includes(row.rule.withPeer!));
         row.watches.textContent = peers.length
-          ? `${peers.map((p) => `${p.label} (${p.driver.displayName})`).join(', ')}`
-          : `Any module that provides "${rule.withPeer}" — none on this page, so this rule is on standby`;
+          ? peers.map((p) => `${p.label} (${p.driver.displayName})`).join(', ')
+          : `Any module that provides "${row.rule.withPeer}" — none on this page, so this rule is on standby`;
       }
     }
     const on = rules.filter((r) => dev.isRuleOn(r)).length;
-    sum.textContent = !rules.length
-      ? ' · no rules'
-      : counts.trip
-        ? ` · ${counts.trip} tripped`
-        : counts.near
-          ? ` · ${counts.near} close to tripping`
-          : ` · ${on} of ${rules.length} rules on · ${counts.ok ?? 0} active`;
+    sum.textContent = counts.trip
+      ? ` · ${counts.trip} tripped`
+      : counts.near
+        ? ` · ${counts.near} close to tripping`
+        : ` · ${on} of ${rules.length} on · ${counts.ok ?? 0} active`;
     el.dataset.state = counts.trip ? 'trip' : counts.near ? 'near' : 'ok';
-    const sumFn = d.safety?.summary;
-    line.textContent = sumFn ? ` · ${sumFn(dev.snapshot, set)}` : '';
+  }
+  return { el, update };
+}
 
-    // Watched by: rebuild only when the set of watchers changes; refresh their states every update.
-    const w = dev.watchedBy();
-    watched.hidden = !w.length;
-    const key = w.map((x) => `${x.dev.id}.${x.rule.key}`).join('|');
-    if (key !== watchedKey) {
-      watchedKey = key;
-      watchedList.replaceChildren(
+/** "Watched by": rules on OTHER units of this page that depend on this function, with their state. */
+function watchedBlock(dev: DeviceInstance, include: (w: ReturnType<DeviceInstance['watchedBy']>[number]) => boolean): { el: HTMLElement; update: () => void } {
+  const list = h('div', { class: 'watched-list' });
+  const el = h('div', { class: 'watched', hidden: true }, h('h4', {}, 'Watched by'), list);
+  let key = '';
+  function update() {
+    const w = dev.watchedBy().filter(include);
+    el.hidden = !w.length;
+    const k = w.map((x) => `${x.dev.id}.${x.rule.key}`).join('|');
+    if (k !== key) {
+      key = k;
+      list.replaceChildren(
         ...w.map((x) =>
           h('div', { class: 'watched-item', 'data-dev': x.dev.id, 'data-rule': x.rule.key },
             h('span', { class: 'rule-chip' }),
-            h('span', {}, h('strong', {}, `${x.dev.label} › ${x.rule.label}`), h('span', { class: 'watched-note' }, ` — ${x.note}`)),
+            h('span', {}, h('strong', {}, `${x.dev.label} › ${x.rule.label}`), h('span', { class: 'watched-note' })),
           ),
         ),
       );
     }
     for (const x of w) {
-      const item = watchedList.querySelector<HTMLElement>(`[data-dev="${x.dev.id}"][data-rule="${x.rule.key}"]`);
+      const item = list.querySelector<HTMLElement>(`[data-dev="${x.dev.id}"][data-rule="${x.rule.key}"]`);
       if (!item) continue;
       const state: RuleState = x.dev.tripped[x.rule.key] ? 'trip' : x.on ? x.status?.state ?? 'idle' : 'off';
       item.dataset.state = state;

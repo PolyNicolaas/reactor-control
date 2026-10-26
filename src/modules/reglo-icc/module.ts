@@ -79,7 +79,7 @@ export const regloIcc: DeviceDriver = {
   // Reply to "1#": model, software version, pump head code (manual p. 24, ref 6.22).
   identify: (name) => /REGLO/i.test(name),
   provides: ['pump', 'dosing'],
-  groups: chans.map((n) => ({ key: g(n), label: `Ch ${n}` })),
+  groups: [...chans.map((n) => ({ key: g(n), label: `Ch ${n}`, channel: true })), { key: 'pump', label: 'All channels' }],
   readings,
   setpoints,
   switches,

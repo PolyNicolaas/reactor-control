@@ -159,6 +159,8 @@ export interface SafetyRule {
   defaultOn?: boolean;
   /** Cannot be turned off (the static floor, e.g. the plate maximum). */
   required?: boolean;
+  /** The function (card section) it belongs to; default: the function of the first switch it stops. */
+  group?: string;
   /** Armed only while a module providing this capability is on the page, e.g. "stirrer". */
   withPeer?: string;
   /** The partner's activity this rule depends on (e.g. "stirring"); its switch gets a warning. */
@@ -196,6 +198,8 @@ export interface CautionList {
   sources: string;
   items: { name: string; value: number; note?: string }[];
   nearBy: number;
+  /** The function (card section) it is shown in. */
+  group?: string;
   reference(s: DeviceSnapshot, set: Record<string, number>): { value: number; label: string };
   /** Offer a button per item to set a safety setting to (item value - margin), rounded down to 5. */
   cap?: { setting: string; margin: number; label(v: number): string };
@@ -208,6 +212,17 @@ export interface DeviceSnapshot {
   gross: Record<string, number | undefined>;       // tareable reading key -> value as the device reports it
   setpoints: Record<string, number | undefined>;   // setpoint key -> value read back from device
   switches: Record<string, boolean>;               // switch key -> last commanded state
+}
+
+/** One function of a unit: a section of its card and an address for methods. */
+export interface FunctionGroup {
+  key: string;      // stable: methods address it ("heating", "ch1")
+  label: string;    // "Heating", "Ch 1"
+  /**
+   * Repeated channels of the same kind (pump channels): the user may rename them, and their names are
+   * put in front of reading labels on the chart and in recordings ("Reagent A flow").
+   */
+  channel?: boolean;
 }
 
 export interface DeviceDriver {
@@ -248,8 +263,13 @@ export interface DeviceDriver {
   formatSetpoint?(sp: SetpointSpec, value: number): string;
   /** Runs after every poll: compute derived readings, reconcile state. May edit the snapshot. */
   derive?(s: DeviceSnapshot, dtSeconds: number): void;
-  /** Panel sections, in order; specs with a matching `group` are drawn inside them. */
-  groups?: { key: string; label: string }[];
+  /**
+   * The unit's FUNCTIONS, in order (Heating, Stirring, Weighing; or pump channels). Each is one section of
+   * the card holding its readings, setpoints, switches, safety rules and Watched by, and is what a method
+   * addresses ("Hotplate › Heating › Temperature"). Specs join one with `group`; a safety rule joins the
+   * function of the switch it stops unless it sets its own `group`.
+   */
+  groups?: FunctionGroup[];
   /** A simulated unit for testing without hardware. */
   simulate(): Transport;
 }

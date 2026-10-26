@@ -5,7 +5,7 @@ it first** ([guide](../README.md)). Manual facts with pages: [`docs/manuals/euro
 
 | File | What it shows |
 | --- | --- |
-| [`module.ts`](module.ts) | The nine sections with one reading of each kind and one setpoint/switch pair. |
+| [`module.ts`](module.ts) | The nine sections; two functions (Stirring, Temperature); one setpoint/switch pair. |
 | [`safety.ts`](safety.ts) | One rule: torque limit. |
 | [`sim.ts`](sim.ts) | Physics only, on the shared NAMUR simulator; `SIM_JAM 1` blocks the shaft. |
 | [`eurostar-60-control.test.ts`](eurostar-60-control.test.ts) | Set-vs-actual against the simulator; the torque rule on timelines and on a jammed simulator. |

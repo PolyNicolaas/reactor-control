@@ -20,6 +20,12 @@ export const eurostar60: DeviceDriver = {
   // so a different stirrer that also says "stirrer" is covered by them.
   provides: ['stirrer', 'overhead-stirrer'],
 
+  // Functions: one card section each, and what a method addresses ("Stirrer › Stirring › Speed").
+  groups: [
+    { key: 'stirring', label: 'Stirring' },
+    { key: 'temperature', label: 'Temperature' },
+  ],
+
   // 2. Connection — serial settings and line end, straight from the manual.
   serial: NAMUR_SERIAL,
   lineEnd: ' \r \n', // manual: "blank CR LF" (hex 20 0D 20 0A)
@@ -27,9 +33,9 @@ export const eurostar60: DeviceDriver = {
   // 3. Readings — polled every second. `activity` turns a reading into an on/off fact other code can
   //    use: camera clips when stirring starts/stops, and other modules' rules ("is anything stirring?").
   readings: [
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, activity: { name: 'stirring', above: 20, switchKey: 'motor' } },
-    { key: 'torque', label: 'Torque', unit: 'Ncm', cmd: 'IN_PV_5', chart: true },
-    { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_3', chart: true },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, group: 'stirring', activity: { name: 'stirring', above: 20, switchKey: 'motor' } },
+    { key: 'torque', label: 'Torque', unit: 'Ncm', cmd: 'IN_PV_5', chart: true, group: 'stirring' },
+    { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_3', chart: true, primary: true, group: 'temperature' },
   ],
 
   // 4. Setpoints — what the user can set. `switchKey` links it to the switch that makes the unit act
@@ -37,12 +43,12 @@ export const eurostar60: DeviceDriver = {
   setpoints: [
     {
       key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'OUT_SP_4', readCmd: 'IN_SP_4',
-      min: 30, max: 2000, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed', switchKey: 'motor',
+      min: 30, max: 2000, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed', switchKey: 'motor', group: 'stirring',
     },
   ],
 
   // 5. Switches — on/off functions.
-  switches: [{ key: 'motor', label: 'Motor', on: 'START_4', off: 'STOP_4' }],
+  switches: [{ key: 'motor', label: 'Motor', on: 'START_4', off: 'STOP_4', group: 'stirring' }],
 
   // 6. Stop and release — what Stop all sends, and what hands the unit back to its own keypad.
   stopCommands: ['STOP_4'],

@@ -39,8 +39,14 @@ document.getElementById('app')!.replaceChildren(
   h(
     'main',
     {},
-    h('section', { class: 'card chart-card' }, h('h2', {}, 'Live chart'), h('p', { class: 'hint' }, 'One lane per device on a shared time axis. Tap a channel to show or hide it; setpoints are dashed and hidden at first.'), chartHost),
+    // Controls first: one card per unit, each grouped by function. The chart follows and can be folded.
     h('section', { class: 'devices' }, h('div', { class: 'section-head' }, h('h2', {}, 'Devices'), h('span', { class: 'hint' }, 'Drag ⠿ to reorder; the chart lanes follow.')), panels),
+    h(
+      'details',
+      { class: 'card chart-card', open: true },
+      h('summary', {}, h('h2', {}, 'Live chart'), h('span', { class: 'hint' }, 'One lane per device on a shared time axis. Tap a channel to show or hide it; setpoints are dashed and hidden at first.')),
+      chartHost,
+    ),
   ),
   h(
     'footer',

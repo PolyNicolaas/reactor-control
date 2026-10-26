@@ -18,16 +18,16 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 | Document | What it is |
 | --- | --- |
 | [docs/DESIGN.md](docs/DESIGN.md) | **Start here.** How the app is used, what is recorded and saved, decisions, roadmap, ideas, open questions. A living document: updated with every code change |
-| [docs/program-format.md](docs/program-format.md) | Draft format for reaction programs (roles, steps, live adjustments) |
+| [docs/method-format.md](docs/method-format.md) | Draft format for reaction methods (roles, steps, live adjustments) |
 | [docs/MODULES.md](docs/MODULES.md) | Supported and planned devices (generated from `docs/modules.json`) |
 | [docs/manuals/](docs/manuals/README.md) | One folder per device: manual (downloaded, not committed) and annotated `notes.md` |
-| [examples/programs/](examples/programs/) | Example program file |
+| [examples/methods/](examples/methods/) | Example method file |
 | [CLAUDE.md](CLAUDE.md) | Rules for changing the code (keep the design doc current) |
 
 ## What works now
 
 - Add, remove and reorder units on the control page (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
-- One card per unit, built from its module: live readings, setpoints with read-back from the unit ("Set · actual"), on/off switches, a status word, and a **Safety** section with the module's rules live. Pump channels each get their own block and can be named.
+- One card per unit, built from its module and **grouped by function** (Heating, Stirring, Weighing; each pump channel): each section has its live readings, setpoint with read-back from the unit ("Set · actual"), on/off switch, its **safety rules** live with on/off and settings, and *Watched by* when another unit's rules depend on it. Pump channels can be named.
 - **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).

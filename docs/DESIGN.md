@@ -1,10 +1,10 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (safety rule rows with on/off, settings and states on the card; Watched by).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (cards grouped by function; controls before the chart; "program" renamed "method").
 
-Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
+Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (draft method format) · [manuals/](manuals/README.md) (device notes)
 
-**Contents:** [1 What it is](#1-what-it-is) · [2 How it is used](#2-how-it-is-used) · [3 What is recorded and saved](#3-what-is-recorded-and-saved) · [4 How it works](#4-how-it-works-short) · [5 Decisions](#5-decisions) · [6 Programs](#6-programs-draft) · [7 Reaction ID, Stop, package](#7-reaction-id-stop-and-the-package) · [8 ELN and Luma](#8-eln-and-luma-lab-connect-deferred--d17) · [9 Camera and video](#9-camera-and-video) · [10 Roadmap](#10-roadmap) · [11 Ideas](#11-ideas-and-improvements) · [12 Server, feedback, remote access](#12-department-server-and-feedback-planned--d20-d21-to-be-defined) · [13 Known limitations](#13-known-limitations) · [14 Open questions](#14-open-questions)
+**Contents:** [1 What it is](#1-what-it-is) · [2 How it is used](#2-how-it-is-used) · [3 What is recorded and saved](#3-what-is-recorded-and-saved) · [4 How it works](#4-how-it-works-short) · [5 Decisions](#5-decisions) · [6 Methods](#6-methods-draft) · [7 Reaction ID, Stop, package](#7-reaction-id-stop-and-the-package) · [8 ELN and Luma](#8-eln-and-luma-lab-connect-deferred--d17) · [9 Camera and video](#9-camera-and-video) · [10 Roadmap](#10-roadmap) · [11 Ideas](#11-ideas-and-improvements) · [12 Server, feedback, remote access](#12-department-server-and-feedback-planned--d20-d21-to-be-defined) · [13 Known limitations](#13-known-limitations) · [14 Open questions](#14-open-questions)
 
 ## 1. What it is
 
@@ -16,7 +16,7 @@ The goal, in order of importance:
 
 1. **Know exactly what happened** in every reaction: every setpoint, every change and who made it, every reading.
 2. **Control it easily and flexibly**: change anything at any time, like the CombiFlash run screen.
-3. **Repeat it**: turn what happened into a program that can be run again, adjusted live, and shared.
+3. **Repeat it**: turn what happened into a method that can be run again, adjusted live, and shared.
 4. **File it**: hand a complete package for each reaction to the electronic notebook (ELN), linked by a reaction ID.
 
 ## 2. How it is used
@@ -38,9 +38,9 @@ The station workflow (D23):
 2. Connect to the Pi from your laptop with VNC; the app is already open in the browser.
 3. Connect the modules in the app (Add device).
 4. Enter or scan the **reaction ID** (a code linked to the ELN page) to start a reaction. Recording starts automatically and cannot be forgotten.
-5. Run by hand, or load a program and adjust it live. Every change is recorded with its source.
+5. Run by hand, or load a method and adjust it live. Every change is recorded with its source.
 6. **Stop** halts all units, then asks: **Resume** (restore the previous state, same reaction) or **Reaction complete**.
-7. Throughout, data, metadata, photos and video are saved to the **host** automatically. On *Reaction complete* the host closes the **package** for the reaction (data, as-run program, photos, video), where Luma Lab Connect picks it up and files it in the ELN page.
+7. Throughout, data, metadata, photos and video are saved to the **host** automatically. On *Reaction complete* the host closes the **package** for the reaction (data, as-run method, photos, video), where Luma Lab Connect picks it up and files it in the ELN page.
 8. Unplug everything. The station keeps nothing; the host has the how and the what.
 
 ## 3. What is recorded and saved
@@ -60,14 +60,14 @@ The station workflow (D23):
 | **Camera — snapshots** (button) | While recording: `snapshots/` in the zip; otherwise downloaded at once | Same | |
 | Camera list (name, which camera) | Browser storage (`reactor-control.page`) | Until changed | Cameras restart on reload once the site has camera permission |
 
-Not recorded today: reaction ID, station name, operator, the program/plan, the source of each change (person or program), device firmware versions. Nothing is uploaded anywhere yet.
+Not recorded today: reaction ID, station name, operator, the method/plan, the source of each change (person or method), device firmware versions. Nothing is uploaded anywhere yet.
 
 ### Planned
 
 | What | Notes |
 | --- | --- |
 | Reaction session record, saved continuously in browser storage (IndexedDB) | Survives reloads and power cuts; recording starts with the reaction ID |
-| Source of every change (person, program step, device itself) | Basis for "what actually happened" and for as-run programs |
+| Source of every change (person, method step, device itself) | Basis for "what actually happened" and for as-run methods |
 | Reaction package on *Reaction complete* | See [§7](#7-reaction-id-stop-and-the-package) |
 | Device identity: model reply, firmware, serial where available | In the package manifest |
 | Station name (which Pi) | In every record and the manifest; set once per Pi (the station setup script opens the app with `?station=<hostname>`, e.g. `?station=hephaestus`, since a browser cannot read the Pi's hostname; the app does not read it yet) |
@@ -78,6 +78,7 @@ Not recorded today: reaction ID, station name, operator, the program/plan, the s
 
 - **Modules describe devices; the core does the work (D42).** Each device type is a folder in `src/modules/<id>/`: `module.ts` (readings, setpoints, switches, stop commands, wire protocol, what it `provides`), `safety.ts` (its safety rules), `sim.ts`, tests and a README on how it is built. Cards, polling, chart, recording, Stop all and the safety engine are generic. A new device is a new folder; [`src/modules/README.md`](../src/modules/README.md) teaches how, with the existing modules as worked examples and `_template/` to copy.
 - **Safety rules belong to modules and are shown live (D43, D45).** After every poll the core evaluates each of the module's rules that is on; each returns a state and one line with its numbers. The card's **Safety** section shows one row per rule — state (Active, Close, Tripped, Learning, Standby, Off), name, on/off toggle, live line — and, opened, its *why*, what it stops, what it watches and its settings, edited in place. A trip switches the rule's switches off, repeats it every 5 s while it lasts, locks them out until **Reset safety stop**, and is logged with a camera clip. A rule that throws trips (fails safe).
+- **Cards are grouped by function (D47).** A module splits its unit into functions (Heating, Stirring, Weighing, pump channels); each is one section of the card with its readings, setpoint, switch, safety rules and Watched by, and is what a method role addresses. Devices come first on the page; the chart follows and folds.
 - **Modules know about other modules (D44).** A module declares capabilities (`provides`: `stirrer`, `overhead-stirrer`, `hotplate`, `pump`…). A rule with `withPeer: <capability>` is armed only while a module providing it is on the page, and reads it read-only (latest values, history, activities, whether it answers); it never commands it, it stops its own unit. Rules arm and disarm as modules join or leave the page (logged), and a new module that declares a capability is covered by existing rules without changing them. The watched module's card lists them under **Watched by** and asks before a switch-off that would trip one (D46). One page = one reactor.
 - **Protocols:** NAMUR for IKA (9600 7E1, CR LF, unacknowledged writes) and Ismatec for the Reglo ICC (9600 8N1, CR, `*`/`#` acknowledgements). Add device tries both.
 - **One command in flight per port**; polling and user commands share the queue.
@@ -115,13 +116,13 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D7 | 2026-10-22 | Pump: **Ismatec Reglo ICC**, 4 channels, 12 rollers, bought with tubing from **Fisher** | Independent channels, computer control over USB, chemically compatible tubing options |
 | D8 | 2026-10-22 | The app sets pump flow (mL/min) and start/stop; tubing ID and rotation direction stay keypad settings | Direction errors could pull reactor contents back; to revisit (open question) |
 | D9 | 2026-10-22 | Removing a unit from the page stops it before handing it back to local control | No unit left running unattended |
-| D10 | 2026-10-22 | **Knowing what actually happened is the priority.** Programs are optional: a plan to start from, and something produced from the record afterwards | Most reactions will be adjusted by hand |
+| D10 | 2026-10-22 | **Knowing what actually happened is the priority.** Methods are optional: a plan to start from, and something produced from the record afterwards | Most reactions will be adjusted by hand |
 | D11 | 2026-10-22 | Change anything during a run, CombiFlash-style; every change is recorded with time and source | People adjust reactions on the fly |
-| D12 | 2026-10-22 | Manual sessions can be saved as programs, re-imported and duplicated | Repeatability without writing programs first |
-| D13 | 2026-10-22 | Programs name **roles** with required capabilities, not models; a setup check matches units to roles, fuzzy (e.g. EUROSTAR 100 for EUROSTAR 60) | Highly modular, substitutable equipment |
+| D12 | 2026-10-22 | Manual sessions can be saved as methods, re-imported and duplicated | Repeatability without writing methods first |
+| D13 | 2026-10-22 | Methods name **roles** with required capabilities, not models; a setup check matches units to roles, fuzzy (e.g. EUROSTAR 100 for EUROSTAR 60) | Highly modular, substitutable equipment |
 | D14 | 2026-10-22 | Every reaction has a **reaction ID**: a unique code linked to the ELN page | Data must land on the right notebook page |
 | D15 | 2026-10-22 | **Stop** halts all units at once, then offers **Resume** or **Reaction complete** | Safety first; a stop is not always the end |
-| D16 | 2026-10-22 | *Reaction complete* writes a package (reaction ID, as-run program from the time-stamped setpoints, actuals, events, photos) to a drop location for an orchestrator | Hands-off filing into the ELN |
+| D16 | 2026-10-22 | *Reaction complete* writes a package (reaction ID, as-run method from the time-stamped setpoints, actuals, events, photos) to a drop location for an orchestrator | Hands-off filing into the ELN |
 | D17 | 2026-10-22 | ELN will be electronic; product not chosen. **ELN integration is deferred** — design hooks now, implement later. Likely orchestrator: **Luma Lab Connect** | Decide ELN first |
 | D18 | 2026-10-22 | Add a camera to the Pi setup | Visual record of the reaction alongside the data |
 | D19 | 2026-10-22 | This design document is living and is updated with every code change; decisions and improvement ideas are tracked here | Keep the design true to the code |
@@ -142,7 +143,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D34 | 2026-10-26 | RET interlock: default "max plate above setpoint" lowered from 50 °C to **30 °C** (supersedes that default in D32). Units with their own value in Limits keep it | User choice: trip earlier when the probe is out of the medium. Big flasks or oil baths that need a hotter plate raise it per unit |
 | D35 | 2026-10-26 | **Dynamic interlock rules on top of the static ones** (see §15): probe response scaled to the plate–probe gap (replaces the fixed 1 °C / 5 min check of D32), probe drop, probe lost, learned steady gap. **A dynamic rule may only add trips, never loosen a static one**; the learned gap only ever goes down for a given setpoint | Watching the plate against the probe catches a lifted probe, a probe in warm air, boiling dry and a lost stir bar long before setpoint + 30. Keeping the static rules as a floor means a wrong guess in a dynamic rule can only cause a false trip, never a missed one |
 | D36 | 2026-10-26 | **HOT state**: a RET card shows HOT from 50 °C plate, whether heating or not, during and after a run; after a disconnect or reload it shows MAY BE HOT with the last reading and time for up to 1 h | The plate stays hot long after the heater is off; burns happen after the run |
-| D37 | 2026-10-26 | **Solvent autoignition list** under a ⚠ on the RET card, not an automatic cap: rows at or below what the plate may reach now (the larger of the plate cut-off and the plate) are red, within 50 °C amber; each row offers "Cap plate at" (autoignition − 20 °C, after a confirm). The scientist decides | No program metadata yet to know which solvents are present; the list makes the hazard visible and the adjustment one click. Values are the lowest of several sources, which differ by tens of degrees |
+| D37 | 2026-10-26 | **Solvent autoignition list** under a ⚠ on the RET card, not an automatic cap: rows at or below what the plate may reach now (the larger of the plate cut-off and the plate) are red, within 50 °C amber; each row offers "Cap plate at" (autoignition − 20 °C, after a confirm). The scientist decides | No method metadata yet to know which solvents are present; the list makes the hazard visible and the adjustment one click. Values are the lowest of several sources, which differ by tens of degrees |
 | D38 | 2026-10-26 | **Stations are named after mythical smiths and forges**, not numbers (list and rules in §12 "Station names"). The name is the Pi's hostname, the VNC address (`hephaestus.local`) and the station name in every record. Supersedes the `RC-03` example | Easier to remember and say aloud than `reactor-01` ("it's on Brokkr"), and fits equipment that heats and stirs |
 | D39 | 2026-10-26 | **One setup script per station** (`scripts/setup-station.sh`): on a fresh Raspberry Pi OS (desktop, 64-bit) it sets the station name, optional Wi-Fi (including enterprise/eduroam), desktop autologin, VNC, no screen blanking, `dialout`, a forced display for headless VNC, and a Chromium window that opens the app with `?station=<name>` once the network is up and reopens if closed. After the first working station, clone its SD card and only change the name | Stations are ephemeral and interchangeable (D23); a new or replaced Pi should be one command away from ready |
 | D40 | 2026-10-26 | **VNC needs no password for now.** The setup script turns off wayvnc authentication (`enable_auth=false`); the Pi desktop already logs in by itself, so a user goes straight from `<station>.local` to the app. `VNC_AUTH=on` keeps the Pi user's login. Supersedes "a password per Pi" in §12 | Nobody has to know or share a login while stations are being set up. Accepted risks, to deal with later: anyone who can reach a Pi on the network can control its units, including heaters; the connection is unencrypted; the record cannot say who was connected; some VNC viewers warn or refuse. Options to revisit: restrict VNC to the lab subnet (firewall or a lab network from IT), a shared password saved in each viewer, or the server dashboard with NU login (§12) |
@@ -152,10 +153,12 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D44 | 2026-10-26 | **Rules can watch other modules by capability** (`provides` / `withPeer`), armed only while such a module is on the page. New rules: RET *Overhead stirring* (heater off if the overhead stirrer stops or stops answering while heating, 5 s; heating before it ever stirred only warns), Reglo *Dose only while stirring* (all channels off after 5 s with nothing stirring; any `stirrer` counts), Reglo per-channel *volume limit* (off by default), EUROSTAR *torque limit* (off by default) | Hazards cross units (heating or dosing an unstirred flask), but each rule still lives with the switch it turns off, so plugging a module in brings its rules. Matching on capability, not model, covers modules written later |
 | D45 | 2026-10-26 | **Each safety rule is a row on the card with an on/off toggle, its settings and a named state**: Active, Close, Tripped, Learning, Standby, Off. Opening the row shows why, what it Stops, what it Watches and its settings, edited in place (logged). Floor rules are always on (`required`: RET *Plate maximum*, *Plate above setpoint*); rules whose right setting depends on the run start off (`defaultOn: false`: EUROSTAR torque, pump volume limits, now 30 Ncm / 10 mL when turned on). "0 = off" settings are gone; safety settings left the Limits dialog. A tripped rule must be reset before it can be turned off. Supersedes the settings placement of D43 | The person at the hood should see, and control, each rule in one place; a toggle is clearer than a magic 0 |
 | D46 | 2026-10-26 | **Watched by**: a module's card lists the rules on other units of the page that depend on it, with their state and what they will do (`watchNote`, e.g. "Stopping stirring for 5 s while the hotplate heats turns its heater off"). Switching off a switch that drives a watched activity (`activity.switchKey`, `watchesActivity`) asks for confirmation while such a rule is Active | Cross-module rules must not surprise the person at the other unit: stopping the stirrer to check something should not silently stop the heating |
+| D47 | 2026-10-26 | **Each card is grouped by function** (RET: Heating, Stirring, Weighing; EUROSTAR: Stirring, Temperature; Reglo: Ch 1–4 and All channels). A function's section holds its readings, setpoint with set-vs-actual, on/off switch, its safety rules, caution lists and Watched by. Modules declare functions (`groups`) and put every spec in one; a rule joins the function of the switch it stops. The card header keeps the name, status, HOT and a safety chip (worst rule state). The page shows the devices first and the chart after them, foldable. Only channel-type functions (pump channels) are renamable and prefix labels on the chart and in recordings, so CSV columns are unchanged | Everything about stirring belongs together; the old layout scattered one function across readings, setpoint and switch columns. Functions are also what methods address (method-format.md "Roles are filled by functions"), and where a running method's lane will show |
+| D48 | 2026-10-26 | **"Program" is renamed "method"** everywhere (docs, file format `reactor-method/0.1`, `examples/methods/`, notebook package `reactor_method`); one execution of a method is a **run** | "Method" is what chemists already call a saved sequence of conditions on HPLC/CombiFlash systems; "protocol" is taken by the serial protocol in the code |
 
-## 6. Programs (draft)
+## 6. Methods (draft)
 
-Full draft: [program-format.md](program-format.md). Summary:
+Full draft: [method-format.md](method-format.md). Summary:
 
 - JSON file (`.reactor.json`) with roles, limits, one step lane per role (set, ramp, hold, until-reading gate, wait, dose), prompts for human actions, and abort behaviour.
 - During a run, the device cards stay live: a change is an override of that step, with "keep for the rest of the run"; pause, hold, skip, extend, take a role manual and hand it back.
@@ -176,7 +179,7 @@ Full draft: [program-format.md](program-format.md). Summary:
 | File | Contents |
 | --- | --- |
 | `manifest.json` | Reaction ID, operator, start/end, status, units (model, firmware, roles), app version, file list with checksums |
-| `program.reactor.json` | As-run program built from the time-stamped setpoints and switches |
+| `method.reactor.json` | As-run method built from the time-stamped setpoints and switches |
 | `actuals.csv` | Samples, as in today's samples CSV |
 | `events.csv` | Every change with its source, notes, errors |
 | `run.json` | The complete record (machine-readable) |
@@ -225,34 +228,34 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 ## 10. Roadmap
 
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
-2. **Package and outbox**: as-run program from setpoints, outbox folder writer, zip fallback.
+2. **Package and outbox**: as-run method from setpoints, outbox folder writer, zip fallback.
 3. **Camera**: ~~live view, 720p time-lapse and change clips (D25), download with the recording~~ built as a trial (D28). Next: test on the station Pi with VNC and pick the camera; upload to the host comes with item 7.
 4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
-5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for programs; setup check with role matching.
-6. Program import (file, link, notebook helper), JSON Schema.
+5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for methods; setup check with role matching.
+6. Method import (file, link, notebook helper), JSON Schema.
 7. **Department server** (D20, D22, D23): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; streaming of records and media to the host; feedback → private issues; packages for Luma; station names; NU login.
 8. ELN/Luma integration.
 9. Safety when a station fails (§4): RET watchdog, pump doses in Volume mode; more devices.
-10. **Hotplate safety, next steps** (§15): solvents from the program/reaction metadata set the plate cap automatically; RET watchdog mode 2; warn when the unit's safety limit is above the interlock maximum; set interlock defaults from recorded heat-ups.
+10. **Hotplate safety, next steps** (§15): solvents from the method/reaction metadata set the plate cap automatically; RET watchdog mode 2; warn when the unit's safety limit is above the interlock maximum; set interlock defaults from recorded heat-ups.
 
 ## 11. Ideas and improvements
 
 Add ideas here with a date; move them to the roadmap when decided.
 
 - 2026-10-22 — Pump: per-channel calibration from the app (`xY`/`xV`), so "Dispensed" becomes trustworthy.
-- 2026-10-22 — Pump: set rotation direction per channel from programs, or check it like tubing.
-- 2026-10-22 — Pump: dose a set volume (pump's Volume mode) as a program step; also a safety measure, since the pump then stops by itself if the Pi fails (§4).
+- 2026-10-22 — Pump: set rotation direction per channel from methods, or check it like tubing.
+- 2026-10-22 — Pump: dose a set volume (pump's Volume mode) as a method step; also a safety measure, since the pump then stops by itself if the Pi fails (§4).
 - 2026-10-22 — User-adjustable video settings (time-lapse interval, clip length, continuous video) — not for now (D25).
-- 2026-10-22 — Suggest gates when saving a manual session as a program (e.g. a change made right after the probe reached 60 °C).
-- 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a program.
+- 2026-10-22 — Suggest gates when saving a manual session as a method (e.g. a change made right after the probe reached 60 °C).
+- 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a method.
 - 2026-10-22 — Barcode/QR on the notebook page for the reaction ID.
 - 2026-10-22 — Station dashboard: all Pis and their reactions on one page, through the server (§12, Remote access).
-- 2026-10-26 — Hotplate: user marks which solvents are in the hood (ticks in the ⚠ list), the cap follows the lowest; later from the program's reagent list (§15).
+- 2026-10-26 — Hotplate: user marks which solvents are in the hood (ticks in the ⚠ list), the cap follows the lowest; later from the method's reagent list (§15).
 - 2026-10-26 — Hotplate: heat-up "fingerprint" per flask/bath size from recorded runs, to tune the dynamic rules per setup instead of one default.
 - 2026-10-26 — Record each rule's state and margin with the samples, to tune defaults from real runs and to see a margin shrink before a trip.
 - 2026-10-26 — More cross-module rules: a second probe (EUROSTAR PT100 in the flask) must agree with the RET probe; pump stops when the flask is above a temperature; RET magnetic stirring stops when an overhead stirrer is in the flask.
 - 2026-10-26 — Safety rule changes (toggles, settings) need a reason or an operator once login exists; a supervisor may lock some rules on.
-- 2026-10-26 — Programs list the safety rules (and capabilities) they need, checked at setup like required devices.
+- 2026-10-26 — Methods list the safety rules (and capabilities) they need, checked at setup like required devices.
 - 2026-10-26 — Hotplate: page-wide HOT banner (not only the card) and a sound on interlock trips, for someone at the hood not looking at the screen.
 
 ## 12. Department server and feedback (planned — D20, D21; to be defined)
@@ -371,9 +374,9 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 
 - Which ELN, and what reaction ID format?
 - How Luma Lab Connect expects files (folder, naming, data model) and how it links to an experiment.
-- Override default during program runs: this step only, or rest of the run?
+- Override default during method runs: this step only, or rest of the run?
 - Who confirms prompts — needs operator identity (login)?
-- Pump direction: set by programs or only checked?
+- Pump direction: set by methods or only checked?
 - Camera model and mounting position.
 - Exact time-lapse interval and clip length after a load test on the station Pi (720p fixed, D25).
 - Which units must use a watchdog, and what a reaction should do if its Pi fails (lab policy).

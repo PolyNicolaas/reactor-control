@@ -1,5 +1,5 @@
 {
-  "format": "reactor-program/0.1",
+  "format": "reactor-method/0.1",
   "name": "Dropwise addition at 60 °C",
   "description": "Heat and stir, wait for the probe, add the substrate by hand, then dose reagent A slowly and hold.",
   "author": "Nicolaas",

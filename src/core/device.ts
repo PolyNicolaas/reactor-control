@@ -109,7 +109,9 @@ export class DeviceInstance {
 
   /** "Flow" -> "Ch 1 flow" for grouped specs; used by chart legends and CSV columns. */
   specLabel(spec: { label: string; group?: string }): string {
-    const g = this.groupLabel(spec.group);
+    // Only channel groups (pump channels) prefix labels; "Heating probe" would just be noise.
+    const isChannel = this.driver.groups?.find((x) => x.key === spec.group)?.channel;
+    const g = isChannel ? this.groupLabel(spec.group) : undefined;
     return g ? `${g} ${spec.label.toLowerCase()}` : spec.label;
   }
 

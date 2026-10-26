@@ -427,3 +427,65 @@ p.hot-badge { display: inline-block; margin: 4px 0; }
   .rule-body { padding-left: 8px; }
   .rule-setting { grid-template-columns: 1fr; }
 }
+
+/* ---------- device card: header + one section per function ---------- */
+.panel.device-panel { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.device-panel > header { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+.device-panel > header .dev-title { flex: 1 1 auto; min-width: 0; }
+.device-panel > header .menu { margin-left: auto; flex: none; }
+.device-panel .status { grid-column: auto; grid-row: auto; }
+.dev-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.safety-chip { padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; background: color-mix(in srgb, var(--good) 18%, transparent); white-space: nowrap; }
+.safety-chip[data-state='near'] { background: color-mix(in srgb, var(--warn) 30%, transparent); }
+.safety-chip[data-state='trip'] { background: var(--bad); color: #fff; }
+
+.fns { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.fn { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fn.is-on { border-color: color-mix(in srgb, var(--good) 70%, var(--line)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 50%, transparent); }
+.fn.is-tripped { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.fn-head { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.fn-head .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+.fn.is-on .fn-head .dot { background: var(--good); }
+.fn.is-tripped .fn-head .dot { background: var(--bad); }
+.fn-title { font-weight: 700; font-size: 15px; flex: 1; }
+.fn-switches { display: flex; gap: 6px; }
+.fn-switches .switch { min-height: 40px; padding: 0 16px; }
+.fn .tiles { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+.fn .tile.primary { grid-column: span 2; }
+.fn .tile { padding: 6px 10px; }
+.fn .tile-value { font-size: 20px; }
+.fn .tile.primary .tile-value { font-size: 30px; }
+.fn .sp-row { grid-template-columns: 1fr; gap: 4px; }
+.fn .sp-row label { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.fn .sp-input input { width: 0; flex: 1; min-width: 70px; max-width: 140px; }
+.fn .sp-read { grid-column: 1; }
+.fn .safety, .fn .caution { font-size: 13px; }
+.fn .watched { margin-top: 0; }
+.panel.device-panel.is-offline .fns { opacity: 0.35; pointer-events: none; }
+.device-panel .offline { order: -1; }
+@media (max-width: 1100px) { .panel.device-panel { grid-template-columns: none; } }
+@media (max-width: 560px) { .fns { grid-template-columns: 1fr; } .fn .tile.primary { grid-column: 1 / -1; } }
+
+/* chart card folds */
+.chart-card > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.chart-card > summary::-webkit-details-marker { display: none; }
+.chart-card > summary h2 { margin: 0; }
+.chart-card > summary h2::before { content: '▸ '; color: var(--ink-2); }
+.chart-card[open] > summary h2::before { content: '▾ '; }
+.chart-card > summary .hint { margin: 0; }
+.chart-card[open] > summary { margin-bottom: 8px; }
+
+/* rule rows inside a function section: name + toggle on one line, live text below */
+.fn .rule > summary { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 8px; }
+.fn .rule-text { grid-column: 1 / -1; padding-left: 0; color: var(--ink-2); font-size: 12px; }
+.fn .rule[data-state='trip'] .rule-text, .fn .rule[data-state='near'] .rule-text { color: inherit; font-weight: 600; }
+.fn .rule-body { padding: 2px 6px 8px; }
+.fn .rule-setting { grid-template-columns: minmax(0, 1fr) auto; }
+.rule-toggle { display: inline-flex; }
+.rule-toggle input { min-height: 0; min-width: 0; height: 18px; width: 32px; padding: 0; border: 0; flex: none; }
+.fn .watched-item { grid-template-columns: auto minmax(0, 1fr); }
+.device-panel > header .dev-badges { margin-left: auto; }
+.device-panel > header .menu { margin-left: 0; }
+.device-panel > header { align-self: stretch; }
+.fn .watched { font-size: 13px; }
+.fn .watched h4 { font-size: 13px; margin-bottom: 2px; }
