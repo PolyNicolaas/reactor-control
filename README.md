@@ -46,11 +46,14 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 
 Serial settings are found automatically (IKA: 9600 7E1, CR LF; Reglo ICC: 9600 8N1, CR).
 
-Raspberry Pi kiosk:
+Raspberry Pi station: on a fresh Raspberry Pi OS (64-bit, desktop), run the setup script with a station name from the list in [docs/DESIGN.md](docs/DESIGN.md#station-names-d38), then reboot. It sets up autologin, VNC, Wi-Fi and a browser window that opens the app on boot:
 
 ```bash
-chromium-browser --kiosk https://polynicolaas.github.io/reactor-control/
+STATION_NAME=hephaestus bash scripts/setup-station.sh
+sudo reboot
 ```
+
+Connect with VNC to `hephaestus.local`. Quick manual alternative: `chromium --kiosk https://polynicolaas.github.io/reactor-control/`
 
 Each unit needs one click in the port picker the first time (Add device); after that the page reconnects to allowed ports on its own.
 

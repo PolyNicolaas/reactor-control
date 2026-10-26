@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -34,7 +34,7 @@ The goal, in order of importance:
 
 The station workflow (D23):
 
-1. Pick a named station (a Pi, e.g. `RC-03`), plug in the modules for this reaction (and the camera).
+1. Pick a named station (a Pi, e.g. `hephaestus`; names in §12 "Station names"), plug in the modules for this reaction (and the camera).
 2. Connect to the Pi from your laptop with VNC; the app is already open in the browser.
 3. Connect the modules in the app (Add device).
 4. Enter or scan the **reaction ID** (a code linked to the ELN page) to start a reaction. Recording starts automatically and cannot be forgotten.
@@ -70,7 +70,7 @@ Not recorded today: reaction ID, station name, operator, the program/plan, the s
 | Source of every change (person, program step, device itself) | Basis for "what actually happened" and for as-run programs |
 | Reaction package on *Reaction complete* | See [§7](#7-reaction-id-stop-and-the-package) |
 | Device identity: model reply, firmware, serial where available | In the package manifest |
-| Station name (which Pi) | In every record and the manifest; set once per Pi (proposal: in the kiosk start URL, e.g. `?station=RC-03`, since a browser cannot read the Pi's hostname) |
+| Station name (which Pi) | In every record and the manifest; set once per Pi (the station setup script opens the app with `?station=<hostname>`, e.g. `?station=hephaestus`, since a browser cannot read the Pi's hostname; the app does not read it yet) |
 | Time-lapse and change clips (720p), streamed to the host during the reaction | See [§9](#9-camera-and-video) |
 | Everything above saved on the host as it happens, and kept there | D23; the Pi's browser storage is only a buffer for network drops |
 
@@ -141,6 +141,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D35 | 2026-10-26 | **Dynamic interlock rules on top of the static ones** (see §15): probe response scaled to the plate–probe gap (replaces the fixed 1 °C / 5 min check of D32), probe drop, probe lost, learned steady gap. **A dynamic rule may only add trips, never loosen a static one**; the learned gap only ever goes down for a given setpoint | Watching the plate against the probe catches a lifted probe, a probe in warm air, boiling dry and a lost stir bar long before setpoint + 30. Keeping the static rules as a floor means a wrong guess in a dynamic rule can only cause a false trip, never a missed one |
 | D36 | 2026-10-26 | **HOT state**: a RET card shows HOT from 50 °C plate, whether heating or not, during and after a run; after a disconnect or reload it shows MAY BE HOT with the last reading and time for up to 1 h | The plate stays hot long after the heater is off; burns happen after the run |
 | D37 | 2026-10-26 | **Solvent autoignition list** under a ⚠ on the RET card, not an automatic cap: rows at or below what the plate may reach now (the larger of the plate cut-off and the plate) are red, within 50 °C amber; each row offers "Cap plate at" (autoignition − 20 °C, after a confirm). The scientist decides | No program metadata yet to know which solvents are present; the list makes the hazard visible and the adjustment one click. Values are the lowest of several sources, which differ by tens of degrees |
+| D38 | 2026-10-26 | **Stations are named after mythical smiths and forges**, not numbers (list and rules in §12 "Station names"). The name is the Pi's hostname, the VNC address (`hephaestus.local`) and the station name in every record. Supersedes the `RC-03` example | Easier to remember and say aloud than `reactor-01` ("it's on Brokkr"), and fits equipment that heats and stirs |
+| D39 | 2026-10-26 | **One setup script per station** (`scripts/setup-station.sh`): on a fresh Raspberry Pi OS (desktop, 64-bit) it sets the station name, optional Wi-Fi (including enterprise/eduroam), desktop autologin, VNC, no screen blanking, `dialout`, a forced display for headless VNC, and a Chromium window that opens the app with `?station=<name>` once the network is up and reopens if closed. After the first working station, clone its SD card and only change the name | Stations are ephemeral and interchangeable (D23); a new or replaced Pi should be one command away from ready |
 
 ## 6. Programs (draft)
 
@@ -294,7 +296,7 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 
 | Way | How | Scale | Notes |
 | --- | --- | --- | --- |
-| VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in; connect from the laptop to each Pi's desktop | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
+| VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in (turned on by the setup script, D39); connect from the laptop to `<station>.local` | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
 | Remote view through the server (idea, not decided) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
 
 **Safety rules for remote control (to define with lab policy):**
@@ -307,6 +309,21 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 ### Interim option
 
 The Pi can run the same container for itself: pages served from `localhost` count as secure, so no certificate is needed, and the token stays on the Pi. Moving to the department server later is the same code on another machine.
+
+### Station names (D38)
+
+Each station Pi is named after a smith, a forge or a forged thing from myth. Families, so a group of stations reads as a set:
+
+| Family | Names (hostname) | Notes |
+| --- | --- | --- |
+| Smith gods | `hephaestus` (Greek), `vulcan` (Roman), `sethlans` (Etruscan), `goibniu` (Irish), `gofannon` (Welsh), `ilmarinen` (Finnish, forged the Sampo), `svarog` (Slavic), `kothar` (Canaanite Kothar-wa-Khasis), `tvastar` (Vedic), `ogun` (Yoruba), `kurdalagon` (Ossetian), `tubalcain` (Genesis) | The main pool |
+| Crews | `brokkr`, `eitri` (dwarf brothers who forged Mjölnir); `brontes`, `steropes`, `arges` (the Cyclopes at Hephaestus's forge) | For stations that sit together on one bench or hood |
+| Forges | `etna`, `lemnos`, `mosychlos`, `nidavellir` | Good for shared or special-purpose stations (e.g. a test Pi) |
+| Forged things | `mjolnir`, `gungnir`, `draupnir`, `gram`, `durendal` | Spares |
+
+Rules: lowercase, no spaces or accents (hostnames, typed as `<name>.local` in VNC); each name is used once and never reused for a different Pi while old records still point to it; a label with the name goes on the Pi case. Avoid `wayland` (the Germanic smith) because it is also the Pi's display system and confuses troubleshooting.
+
+Setup: `STATION_NAME=hephaestus bash scripts/setup-station.sh` (D39).
 
 ### To define
 
@@ -347,7 +364,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - How long a station may run disconnected from the host, and how much local storage to allow for the queue.
 - Video retention on the host, storage size, and NU/department policy on recording in labs.
 - Should any change start a recording even without a camera (one step closer to always-on recording, D14)?
-- How each Pi gets its station name (kiosk URL parameter, or registered on the server).
+- How each Pi gets its station name: today the setup script passes it as `?station=<hostname>` (D39); the app should read it and put it in every record, and later the server may register stations itself.
 - Does `OUT_NAME IKARET` restore our RET's name permanently?
 - RET: how far above setpoint does the plate run during a normal heat-up (small flask, large flask, oil bath)? Sets the default for "plate above setpoint" (D32).
 - RET: what does `IN_PV_1` read with the probe unplugged, and does the unit then regulate on the plate? Should the interlock also refuse heating when the probe reading is missing?
