@@ -47,7 +47,7 @@ export const plateProbeInterlock: InterlockSpec = {
       hint: 'Heater is cut whenever the plate is hotter than this, whatever the setpoint.',
     },
     {
-      key: 'plateAbove', label: 'Max plate above setpoint', unit: '°C', default: 50, min: 5, max: 200, step: 5,
+      key: 'plateAbove', label: 'Max plate above setpoint', unit: '°C', default: 30, min: 5, max: 200, step: 5,
       hint: 'Heater is cut when the plate runs this far above the temperature setpoint and is not cooling. Raise it for big flasks or oil baths that need a hot plate.',
     },
     {

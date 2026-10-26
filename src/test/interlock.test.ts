@@ -25,18 +25,18 @@ describe('RET plate/probe interlock rules', () => {
     expect(run(() => snap(260, 250, 240), 0)?.r).toMatch(/above the 250 °C maximum/);
   });
 
-  it('probe out of the medium: trips when the plate runs 50 °C past the setpoint', () => {
+  it('probe out of the medium: trips when the plate runs 30 °C past the setpoint', () => {
     // Probe stays at 22 °C; plate climbs 15 °C/min from 22 °C.
     const hit = run((t) => snap(22 + t * 0.25, 22, 50), 900, { ...defaults, probeGap: 0 });
-    expect(hit?.r).toMatch(/more than 50 °C above the 50 °C setpoint/);
-    expect(22 + hit!.t * 0.25).toBeGreaterThan(100);
-    expect(22 + hit!.t * 0.25).toBeLessThan(102);
+    expect(hit?.r).toMatch(/more than 30 °C above the 50 °C setpoint/);
+    expect(22 + hit!.t * 0.25).toBeGreaterThan(80);
+    expect(22 + hit!.t * 0.25).toBeLessThan(82);
   });
 
   it('probe check catches a flat probe before the plate gets very hot (high setpoint)', () => {
     const hit = run((t) => snap(Math.min(340, 22 + t * 0.25), 22, 200), 1800);
     expect(hit?.r).toMatch(/has not risen in 5 min/);
-    expect(22 + hit!.t * 0.25).toBeLessThan(200); // well before setpoint + 50
+    expect(22 + hit!.t * 0.25).toBeLessThan(200); // well before setpoint + 30
   });
 
   it('normal heat-up with the probe in the medium does not trip', () => {
@@ -85,7 +85,7 @@ describe('interlock on a connected (simulated) RET', () => {
     const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
     dev.interlockSettings['plate.plateMax'] = 320;
     expect(dev.interlockValues('plate').plateMax).toBe(320);
-    expect(dev.interlockValues('plate').plateAbove).toBe(50);
+    expect(dev.interlockValues('plate').plateAbove).toBe(30);
   });
 });
 
