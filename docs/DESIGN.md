@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (control variables for methods listed in method-format.md).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (control variables for methods documented, deferred: D49).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (draft method format) · [manuals/](manuals/README.md) (device notes)
 
@@ -155,6 +155,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D46 | 2026-10-26 | **Watched by**: a module's card lists the rules on other units of the page that depend on it, with their state and what they will do (`watchNote`, e.g. "Stopping stirring for 5 s while the hotplate heats turns its heater off"). Switching off a switch that drives a watched activity (`activity.switchKey`, `watchesActivity`) asks for confirmation while such a rule is Active | Cross-module rules must not surprise the person at the other unit: stopping the stirrer to check something should not silently stop the heating |
 | D47 | 2026-10-26 | **Each card is grouped by function** (RET: Heating, Stirring, Weighing; EUROSTAR: Stirring, Temperature; Reglo: Ch 1–4 and All channels). A function's section holds its readings, setpoint with set-vs-actual, on/off switch, its safety rules, caution lists and Watched by. Modules declare functions (`groups`) and put every spec in one; a rule joins the function of the switch it stops. The card header keeps the name, status, HOT and a safety chip (worst rule state). The page shows the devices first and the chart after them, foldable. Only channel-type functions (pump channels) are renamable and prefix labels on the chart and in recordings, so CSV columns are unchanged | Everything about stirring belongs together; the old layout scattered one function across readings, setpoint and switch columns. Functions are also what methods address (method-format.md "Roles are filled by functions"), and where a running method's lane will show |
 | D48 | 2026-10-26 | **"Program" is renamed "method"** everywhere (docs, file format `reactor-method/0.1`, `examples/methods/`, notebook package `reactor_method`); one execution of a method is a **run** | "Method" is what chemists already call a saved sequence of conditions on HPLC/CombiFlash systems; "protocol" is taken by the serial protocol in the code |
+| D49 | 2026-10-26 | **Method control variables are documented, not built**: ramp by rate, on-unit ramps, constant torque, feed on temperature, stability/torque/volume/mass gates, per-method limits, unit-side backstops (EUROSTAR torque limit `OUT_SP_5`, pump Volume mode). Catalogue and open questions in [method-format.md](method-format.md#control-variables-to-decide-2026-10-26); revisit when methods are built | Decide them with the method engine and bench data, not ahead of it |
 
 ## 6. Methods (draft)
 
@@ -231,7 +232,7 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 2. **Package and outbox**: as-run method from setpoints, outbox folder writer, zip fallback.
 3. **Camera**: ~~live view, 720p time-lapse and change clips (D25), download with the recording~~ built as a trial (D28). Next: test on the station Pi with VNC and pick the camera; upload to the host comes with item 7.
 4. **Feedback box** with local queue and configurable send address (§12); works local-only until a server exists.
-5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for methods; setup check with role matching.
+5. **Run view**: plan lanes on the chart, drag to edit, Hold per lane; run engine for methods; setup check with role matching. Then the control variables (D49) as needed: ramp by rate first.
 6. Method import (file, link, notebook helper), JSON Schema.
 7. **Department server** (D20, D22, D23): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; streaming of records and media to the host; feedback → private issues; packages for Luma; station names; NU login.
 8. ELN/Luma integration.

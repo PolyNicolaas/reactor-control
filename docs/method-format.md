@@ -129,7 +129,7 @@ Prompts are steps for people. The run waits (only the lanes that depend on it) u
 What a method can command, how a target may change over time, what the app may control in a loop, and
 what a step may wait for. "Unit" = the instrument does it itself (keeps working if the Pi or browser dies);
 "app" = the app does it every poll (stops with the page: the unit then holds its last setpoint).
-Nothing in this section is built yet; it is the list to decide from.
+**Status: documented to consider; implement later** (DESIGN D49). Nothing here is built or scheduled; it is the list to decide from when methods are built.
 
 ### 1. Direct setpoints and switches (what each function takes)
 
