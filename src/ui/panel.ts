@@ -116,6 +116,9 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       b.addEventListener('click', async () => {
         const on = !dev.snapshot.switches[sw.key];
         if (on && sw.confirmOn && !confirm(sw.confirmOn)) return;
+        // Other modules' safety rules that depend on this switch (e.g. the hotplate watches stirring).
+        const watchers = on ? [] : dev.watchersOfSwitch(sw.key);
+        if (watchers.length && !confirm(`Turning ${sw.label.toLowerCase()} off will trigger:\n\n${watchers.map((w) => `• ${w.dev.label} › ${w.rule.label}: ${w.note}`).join('\n')}\n\nTurn it off anyway?`)) return;
         try {
           await dev.setSwitch(sw.key, on);
           app.change(`${dev.label}: ${dev.specLabel(sw).toLowerCase()} ${on ? 'on' : 'off'}`);
@@ -143,7 +146,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     update();
   });
   const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, alarmTitle, alarmText, resetBtn);
-  const safety = safetyBlock(dev, () => editLimits());
+  const safety = safetyBlock(app, dev);
   const hotEl = h('span', { class: 'hot-badge', role: 'status', hidden: true });
   const cautions = (d.cautions ?? []).map((c) => cautionBlock(app, dev, c));
   dev.tripped$.on((text) => toast(`SAFETY STOP — ${text}`, 'error'));
@@ -291,15 +294,6 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         const i = h('input', { type: 'number', min: sp.min, max: sp.max, step: sp.step, value: dev.limits[sp.key] ?? '' }) as HTMLInputElement;
         return { sp, i };
       });
-      // Safety settings, grouped under the rule they belong to.
-      const values = dev.safetyValues();
-      const ruleInputs = rules
-        .filter((r) => r.settings?.length)
-        .map((r) => ({
-          r,
-          fields: r.settings!.map((st) => ({ st, i: h('input', { type: 'number', min: st.min, max: st.max, step: st.step, value: values[st.key] }) as HTMLInputElement })),
-        }));
-      const ilInputs = ruleInputs.flatMap((x) => x.fields);
       return h(
         'form',
         {
@@ -307,16 +301,6 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
           onsubmit: (e: Event) => {
             e.preventDefault();
             for (const { sp, i } of inputs) dev.limits[sp.key] = i.value === '' ? undefined : Math.min(Number(i.value), sp.max);
-            const changed: string[] = [];
-            for (const { st, i } of ilInputs) {
-              const before = values[st.key];
-              const v = Number(i.value);
-              if (i.value === '' || !Number.isFinite(v) || v === st.default) delete dev.safetySettings[st.key];
-              else dev.safetySettings[st.key] = Math.min(st.max, Math.max(st.min, v));
-              const after = dev.safetySettings[st.key] ?? st.default;
-              if (after !== before) changed.push(`${st.label.toLowerCase()} ${before} → ${after} ${st.unit}`);
-            }
-            if (changed.length) app.change(`${dev.label}: safety settings ${changed.join(', ')}`);
             app.save();
             update();
             close(true);
@@ -324,12 +308,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         },
         h('p', { class: 'hint' }, 'Setpoints above your limit are refused. Leave empty to use the device maximum.'),
         ...inputs.map(({ sp, i }) => h('label', {}, `Max ${sp.label.toLowerCase()} (${sp.unit}, device max ${sp.max})`, i)),
-        ruleInputs.length > 0 && h('h3', {}, 'Safety rules'),
-        ruleInputs.length > 0 && h('p', { class: 'hint' }, 'When a rule trips, the app switches off what it guards and locks it out until you reset it on the card. This only works while this page is open and the unit answers; the unit\'s own limits are the backstop.'),
-        ...ruleInputs.flatMap(({ r, fields }) => [
-          h('h4', {}, r.label),
-          ...fields.map(({ st, i }) => h('label', {}, `${st.label} (${st.unit})`, i, st.hint && h('span', { class: 'hint' }, st.hint))),
-        ]),
+        rules.length > 0 && h('p', { class: 'hint' }, 'Safety rules and their settings are in the Safety section on the card.'),
         h('div', { class: 'actions' }, h('button', { class: 'primary', type: 'submit' }, 'Save')),
       );
     });
@@ -439,56 +418,173 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
   return { el, update };
 }
 
-const STATE_LABEL: Record<RuleState, string> = { off: 'Off', idle: 'Idle', learning: 'Learning', ok: 'OK', near: 'Close', trip: 'STOP' };
+/** What each rule state is called on the card. */
+const STATE_LABEL: Record<RuleState, string> = { off: 'Off', idle: 'Standby', learning: 'Learning', ok: 'Active', near: 'Close', trip: 'Tripped' };
+const STATE_HINT: Record<RuleState, string> = {
+  off: 'Turned off: this rule does nothing',
+  idle: 'On, nothing to watch right now',
+  learning: 'On, collecting data before it can judge',
+  ok: 'On and watching: all fine',
+  near: 'On and watching: getting close to tripping',
+  trip: 'Tripped: what it guards is off and locked until reset',
+};
 
 /**
- * The module's safety rules, live: one row per rule with its state, its numbers, and (on demand) why it
- * exists. Every card has this section, so anyone can see what guards the unit and how close it is.
+ * The module's safety rules, live. One row per rule: state, name, on/off toggle, live numbers; open
+ * the row for why it exists, what it stops, which module it watches, and its settings (edited in
+ * place, logged). Below, "Watched by": rules on OTHER modules of this page that depend on this one.
  */
-function safetyBlock(dev: DeviceInstance, openSettings: () => void): { el: HTMLElement; update: () => void } {
-  const rules = dev.driver.safety?.rules ?? [];
+function safetyBlock(app: App, dev: DeviceInstance): { el: HTMLElement; update: () => void } {
+  const d = dev.driver;
+  const rules = d.safety?.rules ?? [];
   const sum = h('span', { class: 'safety-sum' });
   const line = h('span', { class: 'safety-line' });
-  const rows: { el: HTMLElement; chip: HTMLElement; text: HTMLElement; key: string }[] = [];
+  const swLabel = (k: string) => d.switches.find((x) => x.key === k)?.label ?? k;
+  const rows: { el: HTMLElement; chip: HTMLElement; text: HTMLElement; toggle: HTMLInputElement; watches?: HTMLElement; inputs: Record<string, HTMLInputElement>; key: string }[] = [];
   const list = h('div', { class: 'safety-rules' });
+
   for (const r of rules) {
     const chip = h('span', { class: 'rule-chip' });
     const text = h('span', { class: 'rule-text' });
+    const toggle = h('input', { type: 'checkbox', role: 'switch', 'aria-label': `${r.label} on/off` }) as HTMLInputElement;
+    toggle.disabled = !!r.required;
+    toggle.title = r.required ? 'Always on: this rule is the floor the others build on' : 'Turn this rule on or off';
+    // The toggle sits in the row's summary: keep a click on it from opening the row.
+    toggle.addEventListener('click', (e) => e.stopPropagation());
+    toggle.addEventListener('change', () => {
+      const on = toggle.checked;
+      if (!on && !confirm(`Turn off "${r.label}" on ${dev.label}?\n\n${r.why}`)) {
+        toggle.checked = true;
+        return;
+      }
+      try {
+        dev.setRuleOn(r.key, on);
+        app.change(`${dev.label}: safety rule "${r.label}" ${on ? 'on' : 'off'}`);
+        app.save();
+      } catch (e) {
+        toggle.checked = !on;
+        toast((e as Error).message, 'error');
+      }
+      update();
+    });
+    const inputs: Record<string, HTMLInputElement> = {};
+    const settingEls = (r.settings ?? []).map((st) => {
+      const i = h('input', { type: 'number', min: st.min, max: st.max, step: st.step, 'aria-label': st.label }) as HTMLInputElement;
+      inputs[st.key] = i;
+      const apply = () => {
+        const before = dev.safetyValues()[st.key];
+        try {
+          const v = dev.setSafetySetting(st.key, Number(i.value));
+          i.value = String(v);
+          if (v !== before) {
+            app.change(`${dev.label}: ${r.label} — ${st.label.toLowerCase()} ${before} → ${v} ${st.unit}`);
+            app.save();
+          }
+        } catch (e) {
+          i.value = String(before);
+          toast((e as Error).message, 'error');
+        }
+      };
+      i.addEventListener('change', apply);
+      i.addEventListener('keydown', (e) => e.key === 'Enter' && i.blur());
+      return h('label', { class: 'rule-setting' }, h('span', {}, st.label), h('span', { class: 'rule-input' }, i, h('span', { class: 'unit' }, st.unit)), st.hint && h('span', { class: 'hint' }, st.hint));
+    });
+    const watches = r.withPeer ? h('dd', {}) : undefined;
     const el = h(
       'details',
       { class: 'rule' },
-      h('summary', {}, chip, h('span', { class: 'rule-label' }, r.label, r.withPeer ? h('span', { class: 'rule-peer', title: `Watches any module that provides "${r.withPeer}"` }, ` with ${r.withPeer}`) : false), text),
-      h('p', { class: 'rule-why' }, r.why),
+      h('summary', {}, chip, h('span', { class: 'rule-label' }, r.label), h('span', { class: 'rule-toggle' }, toggle), text),
+      h(
+        'div',
+        { class: 'rule-body' },
+        h('p', { class: 'rule-why' }, r.why),
+        h(
+          'dl',
+          { class: 'rule-facts' },
+          h('dt', {}, 'Stops'),
+          h('dd', {}, [...new Set(r.switches.map(swLabel))].join(', ')),
+          ...(watches ? [h('dt', {}, 'Watches'), watches] : []),
+          h('dt', {}, 'On/off'),
+          h('dd', {}, r.required ? 'Always on' : (r.defaultOn ?? true) ? 'On by default' : 'Off by default; turn on when you have set it for this run'),
+        ),
+        settingEls.length ? h('div', { class: 'rule-settings' }, ...settingEls) : false,
+      ),
     );
-    rows.push({ el, chip, text, key: r.key });
+    rows.push({ el, chip, text, toggle, watches, inputs, key: r.key });
     list.append(el);
   }
+
+  const watchedList = h('div', { class: 'watched-list' });
+  const watched = h('div', { class: 'watched', hidden: true }, h('h4', {}, 'Watched by'), h('p', { class: 'hint' }, 'Rules on other units of this page that depend on this one.'), watchedList);
+
   const el = h(
     'details',
     { class: 'safety' },
     h('summary', {}, h('span', { class: 'safety-icon', 'aria-hidden': 'true' }, '⛨'), h('span', {}, 'Safety'), sum, line),
-    rules.length
-      ? list
-      : h('p', { class: 'hint' }, 'This module has no safety rules yet. See src/modules/README.md for how to add one.'),
-    rules.some((r) => r.settings?.length) ? h('div', { class: 'safety-actions' }, h('button', { type: 'button', class: 'small', onclick: openSettings }, 'Safety settings…')) : false,
+    rules.length ? list : h('p', { class: 'hint' }, 'This module has no safety rules yet. See src/modules/README.md for how to add one.'),
+    watched,
   ) as HTMLDetailsElement;
+
+  let watchedKey = '';
   function update() {
     const counts: Partial<Record<RuleState, number>> = {};
+    const set = dev.safetyValues();
     for (const row of rows) {
-      const st = dev.ruleStatus[row.key] ?? { state: 'idle' as RuleState, text: dev.connected ? 'Waiting for the first poll' : 'Not connected' };
-      const state = dev.tripped[row.key] ? 'trip' : st.state;
+      const rule = rules.find((r) => r.key === row.key)!;
+      const on = dev.isRuleOn(rule);
+      const st = dev.ruleStatus[row.key] ?? { state: (on ? 'idle' : 'off') as RuleState, text: on ? (dev.connected ? 'Waiting for the first poll' : 'Not connected') : 'Turned off' };
+      const state: RuleState = dev.tripped[row.key] ? 'trip' : on ? st.state : 'off';
       counts[state] = (counts[state] ?? 0) + 1;
       row.el.dataset.state = state;
       row.chip.textContent = STATE_LABEL[state];
+      row.chip.title = STATE_HINT[state];
       row.text.textContent = dev.tripped[row.key] ?? st.text;
+      row.toggle.checked = on;
+      for (const [k, i] of Object.entries(row.inputs)) if (document.activeElement !== i) i.value = String(set[k]);
+      if (row.watches) {
+        const peers = dev.peers().filter((p) => p !== dev && (p.driver.provides ?? []).includes(rule.withPeer!));
+        row.watches.textContent = peers.length
+          ? `${peers.map((p) => `${p.label} (${p.driver.displayName})`).join(', ')}`
+          : `Any module that provides "${rule.withPeer}" — none on this page, so this rule is on standby`;
+      }
     }
-    const armed = rules.length - (counts.off ?? 0);
+    const on = rules.filter((r) => dev.isRuleOn(r)).length;
     sum.textContent = !rules.length
       ? ' · no rules'
-      : counts.trip ? ` · ${counts.trip} STOPPED` : counts.near ? ` · ${counts.near} close to stopping` : ` · ${armed} of ${rules.length} rules on · all OK`;
+      : counts.trip
+        ? ` · ${counts.trip} tripped`
+        : counts.near
+          ? ` · ${counts.near} close to tripping`
+          : ` · ${on} of ${rules.length} rules on · ${counts.ok ?? 0} active`;
     el.dataset.state = counts.trip ? 'trip' : counts.near ? 'near' : 'ok';
-    const sumFn = dev.driver.safety?.summary;
-    line.textContent = sumFn ? ` · ${sumFn(dev.snapshot, dev.safetyValues())}` : '';
+    const sumFn = d.safety?.summary;
+    line.textContent = sumFn ? ` · ${sumFn(dev.snapshot, set)}` : '';
+
+    // Watched by: rebuild only when the set of watchers changes; refresh their states every update.
+    const w = dev.watchedBy();
+    watched.hidden = !w.length;
+    const key = w.map((x) => `${x.dev.id}.${x.rule.key}`).join('|');
+    if (key !== watchedKey) {
+      watchedKey = key;
+      watchedList.replaceChildren(
+        ...w.map((x) =>
+          h('div', { class: 'watched-item', 'data-dev': x.dev.id, 'data-rule': x.rule.key },
+            h('span', { class: 'rule-chip' }),
+            h('span', {}, h('strong', {}, `${x.dev.label} › ${x.rule.label}`), h('span', { class: 'watched-note' }, ` — ${x.note}`)),
+          ),
+        ),
+      );
+    }
+    for (const x of w) {
+      const item = watchedList.querySelector<HTMLElement>(`[data-dev="${x.dev.id}"][data-rule="${x.rule.key}"]`);
+      if (!item) continue;
+      const state: RuleState = x.dev.tripped[x.rule.key] ? 'trip' : x.on ? x.status?.state ?? 'idle' : 'off';
+      item.dataset.state = state;
+      const chip = item.querySelector<HTMLElement>('.rule-chip')!;
+      chip.textContent = STATE_LABEL[state];
+      chip.title = STATE_HINT[state];
+      item.querySelector('.watched-note')!.textContent = ` — ${x.note}`;
+    }
   }
   return { el, update };
 }

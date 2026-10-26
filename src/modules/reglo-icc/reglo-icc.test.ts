@@ -84,7 +84,7 @@ describe('Reglo safety', () => {
 
   it('volume limit stops the channel at its maximum (off by default)', () => {
     expect(runSafety(regloSafety, (t) => pump(t * 0.1), 100).statuses.volume1.state).toBe('off');
-    const hit = runSafety(regloSafety, (t) => pump(t * 0.1), 200, { set: { volumeMax1: 5 } });
+    const hit = runSafety(regloSafety, (t) => pump(t * 0.1), 200, { on: ['volume1'], set: { volumeMax1: 5 } });
     expect(hit.rule).toBe('volume1');
     expect(hit.t).toBe(50);
   });

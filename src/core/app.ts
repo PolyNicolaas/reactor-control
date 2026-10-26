@@ -24,6 +24,8 @@ export interface SavedDevice {
   groupLabels?: Record<string, string>;
   /** Safety settings the user changed, by setting key. */
   safety?: Record<string, number>;
+  /** Safety rules the user turned on or off, by rule key. */
+  rulesOn?: Record<string, boolean>;
   /** Pages saved before 2026-10-26 (keys "plate.<setting>"); read once, then saved as `safety`. */
   interlocks?: Record<string, number>;
   /** Last hot-surface reading, so a reload with the unit unplugged still warns "may be hot". */
@@ -125,13 +127,14 @@ export class App {
   }
 
   /** Create a device instance, connect it and add it to the page. */
-  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number>; groupLabels?: Record<string, string>; safety?: Record<string, number>; lastHot?: { v: number; t: number } }): Promise<DeviceInstance> {
+  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number>; groupLabels?: Record<string, string>; safety?: Record<string, number>; rulesOn?: Record<string, boolean>; lastHot?: { v: number; t: number } }): Promise<DeviceInstance> {
     const driver = getDriver(opts.model);
     const dev = new DeviceInstance(opts.id ?? this.newId(driver.model), driver, opts.label, opts.color ?? this.nextColor(), opts.transport);
     if (opts.limits) dev.limits = { ...opts.limits };
     dev.link = opts.link;
     if (opts.tares) dev.tares = { ...opts.tares };
     if (opts.safety) dev.safetySettings = { ...opts.safety };
+    if (opts.rulesOn) dev.rulesOn = { ...opts.rulesOn };
     // Other modules on this page, for safety rules that watch a partner (SafetyRule.withPeer).
     dev.peers = () => this.devices;
     if (opts.lastHot) dev.lastHot = { ...opts.lastHot };
@@ -279,6 +282,7 @@ export class App {
         tares: Object.keys(d.tares).length ? d.tares : undefined,
         groupLabels: Object.keys(d.groupLabels).length ? d.groupLabels : undefined,
         safety: Object.keys(d.safetySettings).length ? d.safetySettings : undefined,
+        rulesOn: Object.keys(d.rulesOn).length ? d.rulesOn : undefined,
         lastHot: d.lastHot,
       };
     });
@@ -344,7 +348,7 @@ export class App {
       }
       if (transport) {
         this.missing = this.missing.filter((m) => m.id !== s.id);
-        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares, groupLabels: s.groupLabels, safety: savedSafety(s), lastHot: s.lastHot });
+        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares, groupLabels: s.groupLabels, safety: savedSafety(s), rulesOn: s.rulesOn, lastHot: s.lastHot });
       } else {
         missing.push(s);
       }

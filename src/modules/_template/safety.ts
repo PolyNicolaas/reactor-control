@@ -27,6 +27,8 @@ const heatOnlyWhileStirring: SafetyRule = {
   why: 'Explain why this unit must not run while the partner is not doing its job.',
   switches: ['heater'],
   withPeer: 'stirrer',
+  watchesActivity: 'stirring',  // which activity of the partner it depends on
+  watchNote: 'Shown on the partner\'s card under "Watched by": what stopping it will do here.',
   evaluate({ s, peers }) {
     if (!s.switches.heater) return { state: 'idle', text: 'Heater off' };
     const stirring = peers.some((p) => p.live && p.active('stirring'));

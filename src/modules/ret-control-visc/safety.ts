@@ -67,6 +67,7 @@ export function plateCutoff(s: DeviceSnapshot, set: Record<string, number>): num
 const plateMax: SafetyRule = {
   key: 'plateMax',
   label: 'Plate maximum',
+  required: true, // the floor every other rule builds on: cannot be turned off
   why: 'Whatever the setpoint, the plate must never get hotter than this. Keep it below the autoignition temperature of anything in the hood (⚠ list below).',
   switches: ['heater'],
   settings: [{ key: 'plateMax', label: 'Max plate temperature', unit: '°C', default: 250, min: 30, max: 340, step: 5, hint: 'Heater off whenever the plate is hotter than this.' }],
@@ -82,6 +83,7 @@ const plateMax: SafetyRule = {
 const plateAboveSetpoint: SafetyRule = {
   key: 'plateAbove',
   label: 'Plate above setpoint',
+  required: true, // the main guard against a probe out of the medium: cannot be turned off
   why: 'If the probe is not in the medium, the RET keeps heating the plate far past the setpoint. A plate much hotter than the setpoint and still heating means the probe is not where it should be. Lowering the setpoint over a hot plate does not trip it (the plate is cooling).',
   switches: ['heater'],
   settings: [{ key: 'plateAbove', label: 'Max plate above setpoint', unit: '°C', default: 30, min: 5, max: 200, step: 5, hint: 'Raise it for big flasks or oil baths that need a hotter plate.' }],
@@ -108,13 +110,12 @@ const probeResponse: SafetyRule = {
   why: 'While the plate is much hotter than the probe, the medium — and the probe in it — must warm up. A probe lying beside the flask or hanging in warm air barely moves. The rise it needs scales with how hard the plate is driving.',
   switches: ['heater'],
   settings: [
-    { key: 'probeGap', label: 'Watch when plate is above probe by', unit: '°C', default: 40, min: 0, max: 200, step: 5, hint: '0 turns this rule off.' },
+    { key: 'probeGap', label: 'Watch when plate is above probe by', unit: '°C', default: 40, min: 5, max: 200, step: 5 },
     { key: 'probeWindow', label: 'Over', unit: 'min', default: 5, min: 1, max: 10, step: 1 },
     { key: 'probeResponse', label: 'Probe must rise at least', unit: '% of the gap', default: 3, min: 0, max: 50, step: 1, hint: `E.g. 3 % with the plate 100 °C above the probe: 3 °C per window (never less than ${PROBE_MIN_RISE} °C). Lower it for very large volumes.` },
   ],
   evaluate(ctx) {
     const { s, set, history, now } = ctx;
-    if (!set.probeGap) return { state: 'off', text: 'Off' };
     const plate = s.values.plate;
     const probe = probeOf(s.values);
     const sp = s.setpoints.temp;
@@ -151,10 +152,9 @@ const probeDrop: SafetyRule = {
   label: 'Probe drop',
   why: 'A probe lifted out of a hot flask cools fast, and the RET answers by heating the plate hard. A quick fall with the setpoint unchanged trips within seconds instead of waiting for the plate to overshoot.',
   switches: ['heater'],
-  settings: [{ key: 'probeDrop', label: 'Trip on a probe fall of', unit: `°C in ${DROP_WINDOW_S / 60} min`, default: 10, min: 0, max: 100, step: 1, hint: 'Raise it if large cold additions trip it. 0 turns it off.' }],
+  settings: [{ key: 'probeDrop', label: 'Trip on a probe fall of', unit: `°C in ${DROP_WINDOW_S / 60} min`, default: 10, min: 1, max: 100, step: 1, hint: 'Raise it if large cold additions trip it.' }],
   evaluate(ctx) {
     const { s, set, history, now } = ctx;
-    if (!set.probeDrop) return { state: 'off', text: 'Off' };
     const probe = probeOf(s.values);
     const sp = s.setpoints.temp;
     if (probe === undefined || sp === undefined) return { state: 'idle', text: 'Waiting for probe and setpoint' };
@@ -203,9 +203,8 @@ const steadyGap: SafetyRule = {
   label: 'Steady gap',
   why: 'Once the probe has held the setpoint, the plate–probe gap needed to hold it is learned for this flask. If that gap later grows a lot, something changed: probe lifted, flask boiling dry, stir bar lost. Relearned at each setpoint; it only ever goes down, so a slow creep is not absorbed.',
   switches: ['heater'],
-  settings: [{ key: 'gapGrowth', label: 'Trip when the gap grows by', unit: '°C', default: 15, min: 0, max: 100, step: 1, hint: `Held for ${GROW_HOLD_S} s. Reflux starting right at the setpoint can trip it; raise it then. 0 turns it off.` }],
+  settings: [{ key: 'gapGrowth', label: 'Trip when the gap grows by', unit: '°C', default: 15, min: 1, max: 100, step: 1, hint: `Held for ${GROW_HOLD_S} s. Reflux starting right at the setpoint can trip it; raise it then.` }],
   evaluate({ s, set, history, mem, now }) {
-    if (!set.gapGrowth) return { state: 'off', text: 'Off' };
     const plate = s.values.plate;
     const probe = probeOf(s.values);
     const sp = s.setpoints.temp;
@@ -249,10 +248,11 @@ const stirringLost: SafetyRule = {
   why: 'With an overhead stirrer on the page, heating an unstirred flask makes hot spots and can bump. If the stirrer stops while heating (switched off, stalled, error, or not answering), the heater goes off too. Armed only while an overhead stirrer is on the page; any module that provides "overhead-stirrer" counts.',
   switches: ['heater'],
   withPeer: 'overhead-stirrer',
-  settings: [{ key: 'stirLostS', label: 'Heater off after stirring stops for', unit: 's', default: 5, min: 0, max: 120, step: 1, hint: '0 turns this rule off.' }],
+  watchesActivity: 'stirring',
+  watchNote: 'Stopping stirring for {stirLostS} s while the hotplate heats turns its heater off.',
+  settings: [{ key: 'stirLostS', label: 'Heater off after stirring stops for', unit: 's', default: 5, min: 1, max: 120, step: 1 }],
   evaluate(ctx) {
     const { set, peers, mem, now } = ctx;
-    if (!set.stirLostS) return { state: 'off', text: 'Off' };
     const was = ((mem.wasStirring as Record<string, boolean> | undefined) ??= {});
     const lostSince = ((mem.lostSince as Record<string, number> | undefined) ??= {});
     if (!heating(ctx)) {

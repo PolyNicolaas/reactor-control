@@ -53,6 +53,8 @@ export class DeviceInstance {
   groupLabels: Record<string, string> = {};
   /** User overrides of safety settings, keyed by setting key (unique within the module). */
   safetySettings: Record<string, number> = {};
+  /** Rules the user turned on or off, overriding the rule's default (SafetyRule.defaultOn). */
+  rulesOn: Record<string, boolean> = {};
   /** Latched safety trips: rule key -> reason. Cleared only by resetSafety(). */
   tripped: Record<string, string> = {};
   /** Live status of every safety rule, refreshed after each poll. */
@@ -334,6 +336,10 @@ export class DeviceInstance {
           this.armedWith[rule.key] = with_;
         }
       }
+      if (!this.isRuleOn(rule)) {
+        this.ruleStatus[rule.key] = { state: 'off', text: 'Turned off' };
+        continue;
+      }
       let st: RuleStatus;
       try {
         st = this.evaluate(rule, now);
@@ -377,6 +383,71 @@ export class DeviceInstance {
     // A plate last seen hot over an hour ago has cooled; stop warning.
     if (!live && Date.now() - this.lastHot.t > 60 * 60_000) return undefined;
     return { state: live ? 'hot' : 'maybe', ...this.lastHot };
+  }
+
+  /** Whether a rule is on: required rules always; otherwise the user's choice or the rule's default. */
+  isRuleOn(rule: SafetyRule): boolean {
+    return rule.required || (this.rulesOn[rule.key] ?? rule.defaultOn ?? true);
+  }
+
+  /** Turn a rule on or off. Required rules cannot be turned off, and a tripped rule must be reset first. */
+  setRuleOn(key: string, on: boolean): void {
+    const rule = this.driver.safety?.rules.find((r) => r.key === key);
+    if (!rule) throw new Error(`No safety rule ${key}`);
+    if (!on && rule.required) throw new Error(`"${rule.label}" cannot be turned off`);
+    if (!on && this.tripped[key]) throw new Error(`"${rule.label}" has tripped; reset the safety stop before turning it off`);
+    if (on === (rule.defaultOn ?? true)) delete this.rulesOn[key];
+    else this.rulesOn[key] = on;
+    this.log('info', `Safety rule "${rule.label}" turned ${on ? 'on' : 'off'}`);
+    if (!on) this.ruleStatus[key] = { state: 'off', text: 'Turned off' };
+    this.changed.emit(this);
+  }
+
+  /** Change one safety setting (clamped to its range). Returns the value now in use. */
+  setSafetySetting(key: string, value: number): number {
+    const st = this.driver.safety?.rules.flatMap((r) => r.settings ?? []).find((x) => x.key === key);
+    if (!st) throw new Error(`No safety setting ${key}`);
+    if (!Number.isFinite(value)) throw new Error('Enter a number');
+    const v = Math.min(st.max, Math.max(st.min, value));
+    if (v === st.default) delete this.safetySettings[key];
+    else this.safetySettings[key] = v;
+    this.changed.emit(this);
+    return v;
+  }
+
+  /** A rule's note with {setting} placeholders filled in from this module's settings. */
+  fillNote(text: string): string {
+    const set = this.safetyValues();
+    return text.replace(/\{(\w+)\}/g, (_, k) => (k in set ? String(set[k]) : `{${k}}`));
+  }
+
+  /**
+   * Rules on OTHER modules of this page that watch this one (their withPeer is something this module
+   * provides), with their live state. Shown on this card as "Watched by".
+   */
+  watchedBy(): { dev: DeviceInstance; rule: SafetyRule; on: boolean; status?: RuleStatus; note: string }[] {
+    const mine = this.driver.provides ?? [];
+    const out: { dev: DeviceInstance; rule: SafetyRule; on: boolean; status?: RuleStatus; note: string }[] = [];
+    for (const other of this.peers()) {
+      if (other === this) continue;
+      for (const rule of other.driver.safety?.rules ?? []) {
+        if (!rule.withPeer || !mine.includes(rule.withPeer)) continue;
+        out.push({ dev: other, rule, on: other.isRuleOn(rule), status: other.ruleStatus[rule.key], note: other.fillNote(rule.watchNote ?? rule.why) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Rules on other modules that would act if this switch were turned off now: they watch an activity
+   * this switch drives, are on, and are currently watching (active or close).
+   */
+  watchersOfSwitch(switchKey: string): { dev: DeviceInstance; rule: SafetyRule; note: string }[] {
+    const acts = this.driver.readings.filter((r) => r.activity?.switchKey === switchKey).map((r) => r.activity!.name);
+    if (!acts.length) return [];
+    return this.watchedBy()
+      .filter((w) => w.on && w.rule.watchesActivity && acts.includes(w.rule.watchesActivity) && (w.status?.state === 'ok' || w.status?.state === 'near'))
+      .map(({ dev, rule, note }) => ({ dev, rule, note }));
   }
 
   /** The safety trip that locks out this switch right now, if any. */

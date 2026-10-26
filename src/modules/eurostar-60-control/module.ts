@@ -27,7 +27,7 @@ export const eurostar60: DeviceDriver = {
   // 3. Readings — polled every second. `activity` turns a reading into an on/off fact other code can
   //    use: camera clips when stirring starts/stops, and other modules' rules ("is anything stirring?").
   readings: [
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, activity: { name: 'stirring', above: 20 } },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, primary: true, activity: { name: 'stirring', above: 20, switchKey: 'motor' } },
     { key: 'torque', label: 'Torque', unit: 'Ncm', cmd: 'IN_PV_5', chart: true },
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_3', chart: true },
   ],

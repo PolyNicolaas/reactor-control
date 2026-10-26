@@ -24,7 +24,7 @@ Manual facts with pages: [`docs/manuals/reglo-icc/notes.md`](../../../docs/manua
 
 | Rule | Trips when | Default | Turns off |
 | --- | --- | --- | --- |
-| Ch *n* volume limit (one per channel) | that channel's dispensed volume reaches the maximum | off | that channel |
+| Ch *n* volume limit (one per channel) | that channel's dispensed volume reaches the maximum | off (10 mL when turned on) | that channel |
 | Dose only while stirring *(with stirrer)* | a channel runs while nothing on the page is stirring, for N s | 5 s | all channels |
 
 The volume limit uses the app's estimate; keep a margin until the channel is calibrated. Dosing a set

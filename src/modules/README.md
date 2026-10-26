@@ -78,8 +78,12 @@ const myRule: SafetyRule = {
   label: 'Torque limit',         // shown on the card
   why: 'What goes wrong without this rule, in plain words.',   // shown on the card
   switches: ['motor'],           // what a trip turns off
-  settings: [{ key: 'torqueMax', label: 'Max torque', unit: 'Ncm', default: 0, min: 0, max: 60, step: 1 }],
+  settings: [{ key: 'torqueMax', label: 'Max torque', unit: 'Ncm', default: 30, min: 1, max: 60, step: 1 }],
+  defaultOn: false,              // on/off toggle on the card; false when the right setting depends on the run
+  required: false,               // true = cannot be turned off (the static floor)
   withPeer: undefined,           // or e.g. 'stirrer': only armed while such a module is on the page
+  watchesActivity: undefined,    // with withPeer: the partner's activity it depends on, e.g. 'stirring'
+  watchNote: undefined,          // with withPeer: shown on the partner's card under "Watched by"; {torqueMax} is filled in
   evaluate({ s, history, set, mem, now, peers }) {
     return { state: 'ok', text: 'Torque 12.3 Ncm · stops above 30 Ncm' };
   },
@@ -88,14 +92,19 @@ const myRule: SafetyRule = {
 
 `evaluate()` runs after every poll and returns a **state** and **one line with the live numbers**:
 
-| State | Meaning | On the card |
+| State | Meaning | Card label |
 | --- | --- | --- |
-| `off` | the user turned it off (a setting of 0) | grey |
-| `idle` | nothing to watch now (heater off, no partner module on the page) | grey |
-| `learning` | collecting data before it can judge | blue |
-| `ok` | watching, nothing wrong | green |
-| `near` | getting close to tripping | amber |
-| `trip` | the unit must stop | red, banner, switches off |
+| `off` | turned off with the rule's toggle (set by the core, not by the rule) | **Off** (grey) |
+| `idle` | on, nothing to watch now (heater off, no partner module on the page) | **Standby** (grey) |
+| `learning` | on, collecting data before it can judge | **Learning** (blue) |
+| `ok` | on and watching, nothing wrong | **Active** (green) |
+| `near` | on and watching, getting close to tripping | **Close** (amber) |
+| `trip` | the unit must stop | **Tripped** (red, banner, switches off) |
+
+On the card each rule is one row: its state, name, an **on/off toggle** (locked for `required` rules)
+and its live line. Opening the row shows *why*, what it **Stops**, which module it **Watches**, and its
+**settings**, edited in place; every toggle and setting change is logged. A rule never needs a
+"0 = off" setting: the toggle does that.
 
 Returning `trip` is all a rule does. The core (`src/core/device.ts`, `checkSafety`) switches the rule's
 switches off, repeats it every 5 s while the condition lasts, locks them out, logs it (with a camera
@@ -107,9 +116,10 @@ clip), and only lets the user reset once the rule no longer trips. A rule that t
 2. **A rule may only add trips.** Keep simple static limits as the floor and put cleverer rules on top, so a wrong guess can cause a false trip but never a missed one.
 3. **Explain yourself.** `why` says what goes wrong; every status line has the numbers and the threshold ("Plate 112 °C · stops above 150 °C"), so anyone can see how close it is.
 4. **Don't trip on one reading.** Require a few seconds (`history`) unless one reading is already conclusive.
-5. **Defaults are conservative and adjustable.** Settings have a hint; `0` turns a rule off when that makes sense. A rule that could stop a reaction for a normal action (a cold addition) says so in its hint.
+5. **Defaults are conservative and adjustable.** Settings have a hint and a range. Floor rules are `required`; a rule whose right setting depends on the run starts off (`defaultOn: false`). A rule that could stop a reaction for a normal action (a cold addition) says so in its hint.
 6. **The rule lives with the switch it turns off.** A rule that stops the heater is in the hotplate module, even when it watches the stirrer.
 7. **Test it.** One test where it must trip, one where it must not.
+8. **Say what you do to others.** A rule that watches another module has a `watchNote`, so the person at that module's card knows what stopping it will do.
 
 ### Rules that know about other modules
 
@@ -119,6 +129,10 @@ page; it reads those modules through `ctx.peers` (read-only: their latest values
 
 - A module **added** to the page arms the rules that look for it at the next poll; a module **removed**
   disarms them. Both are logged ("Safety rule "Overhead stirring" armed (with Stirrer)").
+- The **watched** module's card shows a **Watched by** list: every rule on another unit that depends
+  on it, with that rule's state and its `watchNote` ("Stopping stirring for 5 s while the hotplate heats
+  turns its heater off"). Give the partner's reading `activity: { name, above, switchKey }` and the rule
+  `watchesActivity`: switching that switch off then asks for confirmation while the rule is Active.
 - A **new kind of module** written later is covered by existing rules as soon as it declares the
   capability they look for. Pick `provides` words from this list (add new ones here when needed):
 

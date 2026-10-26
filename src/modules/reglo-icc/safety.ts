@@ -13,12 +13,12 @@ const volumeLimits: SafetyRule[] = CHANNELS.map((n) => ({
   label: `Ch ${n} volume limit`,
   why: 'A channel left running fills the flask past what the reaction (or the flask) can take. This stops the channel at a set volume. "Dispensed" is the app\'s estimate from the set rate, so calibrate the channel and keep a margin.',
   switches: [`run${n}`],
+  defaultOn: false, // the right volume depends on the reaction; turn it on and set it per run
   settings: [
-    { key: `volumeMax${n}`, label: `Ch ${n} max dispensed`, unit: 'mL', default: 0, min: 0, max: 5000, step: 0.5, hint: 'Channel stops at this volume. 0 = off.' },
+    { key: `volumeMax${n}`, label: `Ch ${n} max dispensed`, unit: 'mL', default: 10, min: 0.5, max: 5000, step: 0.5, hint: 'Channel stops at this volume.' },
   ],
   evaluate({ s, set }) {
     const max = set[`volumeMax${n}`];
-    if (!max) return { state: 'off', text: 'Off (set a max volume in Limits)' };
     const v = s.values[`dispensed${n}`] ?? 0;
     if (v >= max) return { state: 'trip', text: `Ch ${n} dispensed ${v.toFixed(2)} mL, limit ${max} mL` };
     return { state: v >= max * 0.9 ? 'near' : s.switches[`run${n}`] ? 'ok' : 'idle', text: `${v.toFixed(2)} of ${max} mL` };
@@ -32,9 +32,10 @@ const noStirring: SafetyRule = {
   why: 'Reagent added to an unstirred flask pools, then reacts all at once when stirring resumes (runaway exotherm). With a stirrer on the page, every channel stops when nothing is stirring. Any module that provides "stirrer" counts: an overhead stirrer or the hotplate\'s magnetic stirrer.',
   switches: CHANNELS.map((n) => `run${n}`),
   withPeer: 'stirrer',
-  settings: [{ key: 'noStirS', label: 'Stop dosing after no stirring for', unit: 's', default: 5, min: 0, max: 120, step: 1, hint: '0 turns this rule off.' }],
+  watchesActivity: 'stirring',
+  watchNote: 'When nothing on the page has stirred for {noStirS} s, the pump stops dosing.',
+  settings: [{ key: 'noStirS', label: 'Stop dosing after no stirring for', unit: 's', default: 5, min: 1, max: 120, step: 1 }],
   evaluate({ s, set, peers, mem, now }) {
-    if (!set.noStirS) return { state: 'off', text: 'Off' };
     const dosing = CHANNELS.some((n) => s.switches[`run${n}`]);
     const stirring = peers.filter((p) => p.live && p.active('stirring'));
     if (stirring.length) {

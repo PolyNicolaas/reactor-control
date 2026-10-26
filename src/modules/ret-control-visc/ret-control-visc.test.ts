@@ -29,7 +29,7 @@ describe('RET safety: static rules', () => {
   });
 
   it('lowering the setpoint while the plate is hot does not trip (plate cooling)', () => {
-    const hit = runSafety(retSafety, (t) => ret(170 - t * 0.1, 150 - t * 0.05, 50), 600, { set: { probeGap: 0 } });
+    const hit = runSafety(retSafety, (t) => ret(170 - t * 0.1, 150 - t * 0.05, 50), 600, { off: ['probeResponse'] });
     expect(hit.rule).toBeUndefined();
   });
 });
@@ -66,7 +66,7 @@ describe('RET safety: dynamic rules', () => {
   });
 
   it('Probe drop: lowering the setpoint is not a drop', () => {
-    const hit = runSafety(retSafety, (t) => ret(Math.max(60, 135 - t * 0.2), Math.max(55, 120 - t * 0.2), t < 10 ? 120 : 50), 600, { set: { gapGrowth: 0 } });
+    const hit = runSafety(retSafety, (t) => ret(Math.max(60, 135 - t * 0.2), Math.max(55, 120 - t * 0.2), t < 10 ? 120 : 50), 600, { off: ['steadyGap'] });
     expect(hit.rule).toBeUndefined();
   });
 
@@ -197,5 +197,60 @@ describe('RET solvent list', () => {
     expect(ref.value).toBe(180); // setpoint 150 + 30
     const flagged = solventCaution.items.filter((i) => i.value <= ref.value).map((i) => i.name);
     expect(flagged).toEqual(['Carbon disulfide', 'Diethyl ether', 'Acetaldehyde', '1,4-Dioxane']);
+  });
+});
+
+describe('RET safety: turning rules on and off', () => {
+  it('required rules cannot be turned off; a tripped rule must be reset first; choices are kept', async () => {
+    const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    expect(() => dev.setRuleOn('plateMax', false)).toThrow(/cannot be turned off/);
+    dev.setRuleOn('probeDrop', false);
+    expect(dev.isRuleOn(retSafety.rules.find((r) => r.key === 'probeDrop')!)).toBe(false);
+    expect(dev.rulesOn).toEqual({ probeDrop: false });
+    dev.setRuleOn('probeDrop', true);
+    expect(dev.rulesOn).toEqual({}); // back to its default: nothing to save
+    await dev.connect();
+    await dev.raw('SIM_PIN 2 300');
+    await wait(400);
+    expect(() => dev.setRuleOn('plateAbove', false)).toThrow(/cannot be turned off/);
+    await dev.disconnect(true);
+  });
+
+  it('a rule turned off reports Off and never trips', async () => {
+    const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    dev.setRuleOn('probeLost', false);
+    await dev.connect();
+    await wait(300);
+    expect(dev.ruleStatus.probeLost).toEqual({ state: 'off', text: 'Turned off' });
+    await dev.disconnect(true);
+  });
+
+  it('settings are clamped to their range and saved only when not the default', () => {
+    const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    expect(dev.setSafetySetting('plateAbove', 999)).toBe(200);
+    expect(dev.setSafetySetting('plateAbove', 30)).toBe(30);
+    expect(dev.safetySettings.plateAbove).toBeUndefined();
+  });
+});
+
+describe('Watched by', () => {
+  it('the stirrer card lists the hotplate rule that watches it, and warns before Motor off while it is active', async () => {
+    const hp = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    const st = new DeviceInstance('st', eurostar60, 'Stirrer', '#000', eurostar60.simulate(), 100);
+    const page = [hp, st];
+    hp.peers = st.peers = () => page;
+    const w = st.watchedBy();
+    expect(w.map((x) => `${x.dev.label} › ${x.rule.label}`)).toEqual(['Hotplate › Overhead stirring']);
+    expect(w[0].note).toBe('Stopping stirring for 5 s while the hotplate heats turns its heater off.');
+    hp.setSafetySetting('stirLostS', 12);
+    expect(st.watchedBy()[0].note).toMatch(/for 12 s/);
+    // Not heating: the rule is on standby, so Motor off triggers nothing.
+    hp.ruleStatus.stirringLost = { state: 'idle', text: 'Not heating' };
+    expect(st.watchersOfSwitch('motor')).toEqual([]);
+    // Heating and stirring: Motor off would trip it.
+    hp.ruleStatus.stirringLost = { state: 'ok', text: 'Stirrer stirring' };
+    expect(st.watchersOfSwitch('motor').map((x) => x.rule.key)).toEqual(['stirringLost']);
+    // The hotplate's own switches are not watched by anything here.
+    expect(hp.watchersOfSwitch('heater')).toEqual([]);
   });
 });

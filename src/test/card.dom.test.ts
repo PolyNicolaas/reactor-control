@@ -41,3 +41,34 @@ describe('device card', () => {
     for (const dev of [...app.devices]) await app.removeDevice(dev);
   });
 });
+
+describe('device card: rule rows and Watched by', () => {
+  it('each rule row has a toggle (locked for required rules) and its settings; the stirrer card lists who watches it', async () => {
+    const app = new App();
+    const hp = await app.addDevice({ model: 'retControlVisc', label: 'Hotplate', transport: drivers.find((d) => d.model === 'retControlVisc')!.simulate() });
+    const st = await app.addDevice({ model: 'eurostar60', label: 'Stirrer', transport: drivers.find((d) => d.model === 'eurostar60')!.simulate() });
+    const hpCard = devicePanel(app, hp, () => {});
+    const stCard = devicePanel(app, st, () => {});
+    await wait(1300);
+    hpCard.update();
+    stCard.update();
+    const row = (key: string) => [...hpCard.el.querySelectorAll<HTMLElement>('.rule')].find((r) => r.textContent!.includes(key))!;
+    const plateMax = row('Plate maximum');
+    expect(plateMax.querySelector<HTMLInputElement>('input[role=switch]')!.disabled).toBe(true);
+    expect(plateMax.querySelector<HTMLInputElement>('.rule-setting input')!.value).toBe('250');
+    expect(plateMax.dataset.state).toBe('ok');
+    expect(plateMax.querySelector('.rule-chip')!.textContent).toBe('Active');
+    const stirring = row('Overhead stirring');
+    expect(stirring.querySelector('.rule-facts')!.textContent).toMatch(/StopsHeater.*WatchesStirrer \(EUROSTAR 60 control\)/);
+    expect(stCard.el.querySelector('.watched')!.hasAttribute('hidden')).toBe(false);
+    expect(stCard.el.querySelector('.watched-item')!.textContent).toMatch(/Hotplate › Overhead stirring — Stopping stirring for 5 s/);
+    // Turning a rule off from its toggle.
+    const tgl = row('Probe drop').querySelector<HTMLInputElement>('input[role=switch]')!;
+    globalThis.confirm = () => true;
+    tgl.checked = false;
+    tgl.dispatchEvent(new Event('change'));
+    expect(hp.rulesOn.probeDrop).toBe(false);
+    expect(row('Probe drop').dataset.state).toBe('off');
+    for (const dev of [...app.devices]) await app.removeDevice(dev);
+  });
+});

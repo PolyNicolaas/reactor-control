@@ -29,7 +29,7 @@ export const retControlVisc: DeviceDriver = {
   readings: [
     { key: 'probe', label: 'Probe', unit: '°C', cmd: 'IN_PV_1', chart: true, primary: true },
     { key: 'plate', label: 'Plate', unit: '°C', cmd: 'IN_PV_2', chart: true },
-    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, activity: { name: 'stirring', above: 20 } },
+    { key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'IN_PV_4', chart: true, activity: { name: 'stirring', above: 20, switchKey: 'stirrer' } },
     { key: 'viscosity', label: 'Viscosity trend', unit: 'trend', cmd: 'IN_PV_5', chart: true },
     // The hardware cut-off, set on the unit itself. The app only reads it.
     { key: 'safety', label: 'Safety limit', unit: '°C', cmd: 'IN_PV_3' },

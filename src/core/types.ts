@@ -39,7 +39,12 @@ export interface ReadingSpec {
    * threshold either way is reported as a change (camera clip, event), whether the app or the
    * unit's own controls caused it.
    */
-  activity?: { name: string; above: number };
+  activity?: {
+    name: string;
+    above: number;
+    /** The switch that starts and stops this activity (lets the card warn before stopping something another module watches). */
+    switchKey?: string;
+  };
 }
 
 export interface SetpointSpec {
@@ -150,8 +155,16 @@ export interface SafetyRule {
   /** Switch keys turned off on a trip and refused while tripped. */
   switches: string[];
   settings?: SafetySetting[];
+  /** On unless the user turns it off. Set false for rules whose right setting depends on the run. */
+  defaultOn?: boolean;
+  /** Cannot be turned off (the static floor, e.g. the plate maximum). */
+  required?: boolean;
   /** Armed only while a module providing this capability is on the page, e.g. "stirrer". */
   withPeer?: string;
+  /** The partner's activity this rule depends on (e.g. "stirring"); its switch gets a warning. */
+  watchesActivity?: string;
+  /** Shown on the partner's card under "Watched by". {settingKey} is replaced by the setting's value. */
+  watchNote?: string;
   evaluate(ctx: RuleContext): RuleStatus;
 }
 

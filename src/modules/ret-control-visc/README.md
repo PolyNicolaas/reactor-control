@@ -37,7 +37,8 @@ The safety design is described in full in [`docs/DESIGN.md` §15](../../../docs/
 | 6 | Steady gap | plate–probe gap grows N past the gap learned at setpoint, for 30 s | 15 °C |
 | 7 | Overhead stirring *(with overhead-stirrer)* | the overhead stirrer stops or stops answering while heating, for N s | 5 s |
 
-Rules 1–2 are the floor; 3–7 only add trips. Every rule's live line and its *why* are on the card.
+Rules 1–2 are the floor and always on; 3–7 only add trips and can be turned off on the card. Rule 7 appears
+under *Watched by* on the overhead stirrer's card. Every rule's live line and its *why* are on the card.
 The unit's own safety limit (set on the unit, read as "Safety limit") is the hardware backstop.
 
 ## Still to check on the bench

@@ -8,13 +8,14 @@ import type { DeviceSnapshot, ModuleSafety, PeerView, RuleStatus, Sample } from 
  *   expect(hit.rule).toBe('plateAbove');
  *
  * `timeline(t)` gives the unit's snapshot at second t. `peers(t)`, if given, gives the other modules
- * on the page at second t (see peer()). Returns the first trip, or rule: undefined with the last statuses.
+ * on the page at second t (see peer()). `on` / `off` turn rules on or off like the card's toggle.
+ * Returns the first trip, or rule: undefined with the last statuses.
  */
 export function runSafety(
   safety: ModuleSafety,
   timeline: (t: number) => DeviceSnapshot,
   seconds: number,
-  opts: { set?: Record<string, number>; peers?: (t: number) => PeerView[]; only?: string[] } = {},
+  opts: { set?: Record<string, number>; peers?: (t: number) => PeerView[]; only?: string[]; on?: string[]; off?: string[] } = {},
 ): { t: number; rule?: string; text?: string; statuses: Record<string, RuleStatus>; mem: Record<string, Record<string, unknown>> } {
   const set = { ...defaultsOf(safety), ...(opts.set ?? {}) };
   const history: Sample[] = [];
@@ -28,6 +29,12 @@ export function runSafety(
     statuses = {};
     for (const rule of safety.rules) {
       if (opts.only && !opts.only.includes(rule.key)) continue;
+      // On/off as on the card: required rules always; else opts.on / opts.off, else the rule's default.
+      const isOn = rule.required || opts.on?.includes(rule.key) || (!opts.off?.includes(rule.key) && (rule.defaultOn ?? true));
+      if (!isOn) {
+        statuses[rule.key] = { state: 'off', text: 'Turned off' };
+        continue;
+      }
       const peers = rule.withPeer ? (opts.peers?.(t) ?? []).filter((p) => p.provides.includes(rule.withPeer!)) : [];
       if (rule.withPeer && !peers.length) {
         statuses[rule.key] = { state: 'idle', text: 'no peer' };

@@ -49,19 +49,20 @@ describe('EUROSTAR set vs actual', () => {
 describe('EUROSTAR safety: torque limit', () => {
   const es = (torque: number, motor = true) => snap({ torque }, {}, { motor });
 
-  it('is off until a max torque is set', () => {
+  it('is off by default (the right limit depends on the shaft and flask)', () => {
     expect(runSafety(eurostarSafety, () => es(50), 10).statuses.torque.state).toBe('off');
   });
 
   it('stops the motor after 3 s above the limit, not on one noisy reading', () => {
-    expect(runSafety(eurostarSafety, (t) => es(t === 5 ? 40 : 10), 20, { set: { torqueMax: 30 } }).rule).toBeUndefined();
-    const hit = runSafety(eurostarSafety, (t) => es(t < 10 ? 10 : 35), 30, { set: { torqueMax: 30 } });
+    expect(runSafety(eurostarSafety, (t) => es(t === 5 ? 40 : 10), 20, { on: ['torque'], set: { torqueMax: 30 } }).rule).toBeUndefined();
+    const hit = runSafety(eurostarSafety, (t) => es(t < 10 ? 10 : 35), 30, { on: ['torque'], set: { torqueMax: 30 } });
     expect(hit.rule).toBe('torque');
     expect(hit.t).toBe(13);
   });
 
   it('a jammed shaft on the simulator trips it and stops the motor', async () => {
     const dev = new DeviceInstance('st', eurostar60, 'Stirrer', '#000', eurostar60.simulate(), 100);
+    dev.setRuleOn('torque', true);
     dev.safetySettings.torqueMax = 40;
     await dev.connect();
     await dev.setSetpoint('speed', 400);

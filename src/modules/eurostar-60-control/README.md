@@ -17,8 +17,10 @@ it first** ([guide](../README.md)). Manual facts with pages: [`docs/manuals/euro
 - **`provides: ['stirrer', 'overhead-stirrer']`**: the hotplate stops heating if this stirrer stops
   (RET rule *Overhead stirring*), and the pump only doses while something stirs (Reglo rule
   *Dose only while stirring*). Neither rule names this model; they look for these words.
-- **`activity: stirring` above 20 rpm** on the speed reading: that is what other modules read, and what
-  starts a camera clip when stirring starts or stops, whoever caused it.
+- **`activity: stirring` above 20 rpm, driven by the Motor switch** on the speed reading: that is what other
+  modules read, and what starts a camera clip when stirring starts or stops, whoever caused it. Because
+  the hotplate and the pump watch it, this card shows them under *Watched by*, and Motor off asks first
+  while either rule is Active.
 - **Motor off, then on, does not restart until the speed is applied again** (user report 2026-10-26).
   The app does not resend the speed by itself; the card shows "Unit is set to 0 rpm, not the 400 rpm
   you applied" and Apply flashes (DESIGN D33). The simulator models it as `STOP_4` clearing the set speed.
@@ -29,7 +31,7 @@ it first** ([guide](../README.md)). Manual facts with pages: [`docs/manuals/euro
 
 | Rule | Trips when | Default | Why it is set so |
 | --- | --- | --- | --- |
-| Torque limit | torque above the limit for 3 s | off | The unit's own overload stop protects the motor, not the glassware. The right limit depends on the shaft and flask, so it is set per setup from the torque seen on a normal run. |
+| Torque limit | torque above the limit for 3 s | off (30 Ncm when turned on) | The unit's own overload stop protects the motor, not the glassware. The right limit depends on the shaft and flask, so it is turned on and set per setup from the torque seen on a normal run. |
 
 ## Still to check on the bench
 

@@ -11,14 +11,15 @@ const torqueLimit: SafetyRule = {
   label: 'Torque limit',
   why: 'A mixture that thickens or a paddle that catches the flask wall drives the torque up. The motor can push harder than a glass shaft or flask can take; this stops the motor before something breaks.',
   switches: ['motor'],
+  // Off until someone sets a limit for their shaft and flask: a wrong default would stop normal runs.
+  defaultOn: false,
   settings: [
     {
-      key: 'torqueMax', label: 'Max torque', unit: 'Ncm', default: 0, min: 0, max: 60, step: 1,
-      hint: 'Motor off when the torque stays above this for 3 s. 0 = off. Pick it from a normal run with your shaft and flask (the torque is on the chart).',
+      key: 'torqueMax', label: 'Max torque', unit: 'Ncm', default: 30, min: 1, max: 60, step: 1,
+      hint: 'Motor off when the torque stays above this for 3 s. Pick it from a normal run with your shaft and flask (the torque is on the chart).',
     },
   ],
   evaluate({ s, history, set, now }) {
-    if (!set.torqueMax) return { state: 'off', text: 'Off (set a max torque in Limits)' };
     const tq = s.values.torque;
     if (!s.switches.motor || tq === undefined) return { state: 'idle', text: 'Motor off' };
     // Over the limit for the last 3 s, so a single noisy reading does not stop the run.
