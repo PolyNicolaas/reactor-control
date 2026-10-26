@@ -63,6 +63,8 @@ Feature review 2026-10-22. Every IKA EUROSTAR manual edition found (2014, 2018; 
 
 **To try on the bench:** `STATUS_4` (motor off, then on), and whether `START_4` keeps the set speed (`IN_SP_4` before and after).
 
+**User report 2026-10-26:** after Motor off, Motor on does not restart the motor until the speed is applied again. Still to check which: `IN_SP_4` reads 0 after `STOP_4`/`START_4`, or keeps the value with the motor not turning. The card shows either case (DESIGN D33); the simulator models it as `STOP_4` clearing the set speed.
+
 ### Other editions and related manuals
 
 - Same 03/2018 edition (20000003965c): [wolflabs PDF](https://www.wolflabs.co.uk/documents/IKA_overhead-stirrers_Eurostar-60-100-control_manual.pdf).
