@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (VNC without a password, D40; station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -143,6 +143,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D37 | 2026-10-26 | **Solvent autoignition list** under a ⚠ on the RET card, not an automatic cap: rows at or below what the plate may reach now (the larger of the plate cut-off and the plate) are red, within 50 °C amber; each row offers "Cap plate at" (autoignition − 20 °C, after a confirm). The scientist decides | No program metadata yet to know which solvents are present; the list makes the hazard visible and the adjustment one click. Values are the lowest of several sources, which differ by tens of degrees |
 | D38 | 2026-10-26 | **Stations are named after mythical smiths and forges**, not numbers (list and rules in §12 "Station names"). The name is the Pi's hostname, the VNC address (`hephaestus.local`) and the station name in every record. Supersedes the `RC-03` example | Easier to remember and say aloud than `reactor-01` ("it's on Brokkr"), and fits equipment that heats and stirs |
 | D39 | 2026-10-26 | **One setup script per station** (`scripts/setup-station.sh`): on a fresh Raspberry Pi OS (desktop, 64-bit) it sets the station name, optional Wi-Fi (including enterprise/eduroam), desktop autologin, VNC, no screen blanking, `dialout`, a forced display for headless VNC, and a Chromium window that opens the app with `?station=<name>` once the network is up and reopens if closed. After the first working station, clone its SD card and only change the name | Stations are ephemeral and interchangeable (D23); a new or replaced Pi should be one command away from ready |
+| D40 | 2026-10-26 | **VNC needs no password for now.** The setup script turns off wayvnc authentication (`enable_auth=false`); the Pi desktop already logs in by itself, so a user goes straight from `<station>.local` to the app. `VNC_AUTH=on` keeps the Pi user's login. Supersedes "a password per Pi" in §12 | Nobody has to know or share a login while stations are being set up. Accepted risks, to deal with later: anyone who can reach a Pi on the network can control its units, including heaters; the connection is unencrypted; the record cannot say who was connected; some VNC viewers warn or refuse. Options to revisit: restrict VNC to the lab subnet (firewall or a lab network from IT), a shared password saved in each viewer, or the server dashboard with NU login (§12) |
 
 ## 6. Programs (draft)
 
@@ -296,7 +297,7 @@ Device control is unaffected: the Pi's browser still talks to the equipment over
 
 | Way | How | Scale | Notes |
 | --- | --- | --- | --- |
-| VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in (turned on by the setup script, D39); connect from the laptop to `<station>.local` | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules), a password per Pi; you see exactly what is at the hood |
+| VNC / remote desktop (**chosen user model**, D23) | Raspberry Pi OS has a VNC server built in (turned on by the setup script, D39); connect from the laptop to `<station>.local` | One window per Pi; fine for a few stations | Needs network access to each Pi (IT firewall/VPN rules); no password for now (D40), so anyone on the network can connect; you see exactly what is at the hood |
 | Remote view through the server (idea, not decided) | Each Pi's app publishes live state to the server; laptops open the app in a normal browser and see all stations on one dashboard; remote changes are sent back through the server to the Pi | All stations in one page | No VNC; uses NU login; every remote change recorded with the person's name |
 
 **Safety rules for remote control (to define with lab policy):**
@@ -342,6 +343,7 @@ Setup: `STATION_NAME=hephaestus bash scripts/setup-station.sh` (D39).
 - A heater switched on with the unit's own controls is not detected (only from the card); `STATUS_1` on the RET could tell, once tested on the bench. Auto-start of recording happens only with a camera on the page.
 - Camera media stays in that browser until downloaded and is cleared when the next recording starts; clips need Chromium (WebCodecs); the encode rate on a Pi with VNC is untested; focus/exposure lock depends on the camera.
 - Changes are logged as commands, not as "who changed what".
+- VNC has no password (D40): anyone who can reach a station on the network can control it, the connection is unencrypted, and the app cannot tell who is connected. The operator must be entered in the app once reaction IDs exist.
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
@@ -364,6 +366,7 @@ Setup: `STATION_NAME=hephaestus bash scripts/setup-station.sh` (D39).
 - How long a station may run disconnected from the host, and how much local storage to allow for the queue.
 - Video retention on the host, storage size, and NU/department policy on recording in labs.
 - Should any change start a recording even without a camera (one step closer to always-on recording, D14)?
+- How to close the open VNC access (D40): lab subnet only, a lab network from IT, a shared password, or the server dashboard with NU login. Ask NU IT what is allowed on the building network.
 - How each Pi gets its station name: today the setup script passes it as `?station=<hostname>` (D39); the app should read it and put it in every record, and later the server may register stations itself.
 - Does `OUT_NAME IKARET` restore our RET's name permanently?
 - RET: how far above setpoint does the plate run during a normal heat-up (small flask, large flask, oil bath)? Sets the default for "plate above setpoint" (D32).

@@ -48,6 +48,22 @@ sudo raspi-config nonint do_boot_behaviour B4   # desktop, auto-login
 sudo raspi-config nonint do_vnc 0               # wayvnc on Wayland
 sudo raspi-config nonint do_blanking 1          # 1 = disable blanking
 
+# ---------- VNC without a password (D40) ----------
+# Anyone who can reach this Pi on the network can control it. Known risk, to be revisited.
+VNC_AUTH="${VNC_AUTH:-off}"                     # off = no password; on = Pi user's login
+WAYVNC_CFG=/etc/wayvnc/config
+if [[ "$VNC_AUTH" == "off" ]]; then
+  echo "==> Turning off VNC password"
+  sudo mkdir -p /etc/wayvnc
+  sudo touch "$WAYVNC_CFG"
+  if sudo grep -q '^enable_auth=' "$WAYVNC_CFG"; then
+    sudo sed -i 's/^enable_auth=.*/enable_auth=false/' "$WAYVNC_CFG"
+  else
+    echo 'enable_auth=false' | sudo tee -a "$WAYVNC_CFG" >/dev/null
+  fi
+  sudo systemctl restart wayvnc 2>/dev/null || true
+fi
+
 # ---------- serial port access for Web Serial ----------
 sudo usermod -aG dialout "$USER"
 
@@ -117,5 +133,5 @@ echo "$LAUNCHER &" >> "$AUTOSTART"
 
 echo
 echo "==> Done. Reboot with:  sudo reboot"
-echo "    VNC: connect to $( [[ -n "$STATION_NAME" ]] && echo "$STATION_NAME" || hostname ).local with this user's login."
+echo "    VNC: connect to $( [[ -n "$STATION_NAME" ]] && echo "$STATION_NAME" || hostname ).local $( [[ "$VNC_AUTH" == "off" ]] && echo "(no password)" || echo "with this user's login")."
 echo "    Log: ~/.cache/reactor-control-launch.log"
