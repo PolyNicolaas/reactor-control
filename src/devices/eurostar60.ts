@@ -20,7 +20,7 @@ export const eurostar60: DeviceDriver = {
   setpoints: [
     {
       key: 'speed', label: 'Speed', unit: 'rpm', cmd: 'OUT_SP_4', readCmd: 'IN_SP_4',
-      min: 30, max: 2000, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed',
+      min: 30, max: 2000, step: 10, decimals: 0, tolerance: 1, actualKey: 'speed', switchKey: 'motor',
     },
   ],
   switches: [{ key: 'motor', label: 'Motor', on: 'START_4', off: 'STOP_4' }],

@@ -16,6 +16,7 @@
 | Line end | CR LF (hex 0D 0A) | p. 31 |
 | RS 232 cable | PC 1.1 cable (9-pin to PC) | p. 32 |
 | Weighing | Range 10–5000 g; display up to 2000 g; accuracy ±(0.3 % + 2 g); resolution not stated. Only works while heating and stirring are off. 2- or 3-point calibration, 200–5000 g | p. 25, 35 |
+| Plate vs probe control | With the external probe connected the RET regulates the **medium** (probe) temperature and drives the plate as hot as needed, up to the hot plate safety temperature (channel 3). A probe outside the medium therefore lets the plate run to the safety limit; the app's interlock (DESIGN D32) guards against this | p. 31 (channels 1–3); user report 2026-10-26 |
 | "Eurostar control" setting | Lets the RET talk directly to a EUROSTAR and stop heating if the EUROSTAR stops or its cable is lost. Keep it **off** when the app controls both units | p. 26 |
 
 ## Channel numbers (X in IN_PV_X, IN_SP_X, OUT_SP_X, START_X, STOP_X)
@@ -89,7 +90,8 @@ Feature review 2026-10-22. Found outside our manual; not used by the app yet. Co
 ## Questions
 
 - [ ] Reply format of `IN_PV_1` on our unit (value only, or value plus channel number?).
-- [ ] Does `IN_PV_1` return a sentinel value when no external probe is plugged in?
+- [ ] Does `IN_PV_1` return a sentinel value when no external probe is plugged in? (Matters for the interlock, DESIGN D32.)
+- [ ] Normal heat-up: how far above setpoint does the plate go (small flask, big flask, oil bath)? Sets the interlock's "plate above setpoint" default.
 - [ ] Does `OUT_WD1@m` echo on our firmware, and how long is the reply delay?
 - [ ] Does the RET accept `OUT_SP_1` while the heater is off (the app sets first, then starts)?
 - [ ] On the RS 232 route (PC 1.1 + adapter), is RTS/CTS flow control needed? The app opens ports with flow control off; the USB route should not care.

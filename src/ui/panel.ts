@@ -15,6 +15,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   const clearBtns: Record<string, HTMLButtonElement> = {};
   const spReadEls: Record<string, HTMLElement> = {};
   const spInputs: Record<string, HTMLInputElement> = {};
+  const spApplyBtns: Record<string, HTMLButtonElement> = {};
   const swEls: Record<string, HTMLButtonElement> = {};
   const groupTitleEls: Record<string, HTMLElement> = {};
   const groupEls: Record<string, HTMLElement> = {};
@@ -100,7 +101,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       'div',
       { class: 'sp-row' },
       h('label', {}, sp.label),
-      h('div', { class: 'sp-input' }, input, h('span', { class: 'unit' }, sp.unit), h('button', { onclick: apply }, 'Apply')),
+      h('div', { class: 'sp-input' }, input, h('span', { class: 'unit' }, sp.unit), (spApplyBtns[sp.key] = h('button', { onclick: apply }, 'Apply') as HTMLButtonElement)),
       read,
     );
   };
@@ -120,6 +121,24 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       swEls[sw.key] = b;
       return b;
   };
+
+  // Interlock: an alarm banner while tripped, and one line saying what is enforced.
+  const ilocks = d.interlocks ?? [];
+  const alarmText = h('span', { class: 'alarm-text' });
+  const resetBtn = h('button', { type: 'button' }, 'Reset interlock') as HTMLButtonElement;
+  resetBtn.addEventListener('click', () => {
+    try {
+      for (const il of ilocks) dev.resetInterlock(il.key);
+      app.change(`${dev.label}: interlock reset`);
+      toast('Interlock reset. The heater can be switched on again.');
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+    update();
+  });
+  const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, h('strong', {}, 'Heater locked out'), alarmText, resetBtn);
+  const guardLine = h('div', { class: 'guard-line' });
+  dev.tripped$.on((text) => toast(`INTERLOCK — ${text}`, 'error'));
 
   // Devices with groups (pump channels) get one compact block per group; others get the
   // classic row: tiles | setpoints | switches.
@@ -150,6 +169,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         h('div', { class: 'setpoints' }, ...d.setpoints.map(spRowFor)),
         h('div', { class: 'switches' }, ...d.switches.map(switchFor)),
       ];
+  if (ilocks.length) body.unshift(alarm), body.push(guardLine);
 
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
@@ -201,10 +221,17 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       if (pend !== undefined) {
         readEl.textContent = `Sending ${fmt(pend, sp.decimals)}…`;
         readEl.dataset.state = 'pending';
+      } else if (sp.switchKey || sp.actualKey) {
+        // Set value vs actual, so a unit that is on but not following (or dropped its setpoint) is obvious.
+        const tr = dev.tracking(sp.key);
+        readEl.textContent = tr.text;
+        readEl.dataset.state = tr.state;
       } else {
         readEl.textContent = rb === undefined ? 'Device: —' : `Device: ${fmt(rb, sp.decimals)} ${sp.unit} ✓`;
         readEl.dataset.state = 'ok';
       }
+      const st = readEl.dataset.state;
+      spApplyBtns[sp.key].classList.toggle('attention', st === 'mismatch' || st === 'stuck');
       const input = spInputs[sp.key];
       if (input.value === '' && document.activeElement !== input && rb !== undefined) input.value = String(rb);
     }
@@ -212,6 +239,15 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       const on = dev.snapshot.switches[sw.key];
       swEls[sw.key].setAttribute('aria-pressed', String(on));
       swEls[sw.key].textContent = `${sw.label}: ${on ? 'ON' : 'OFF'}`;
+      const lock = dev.lockedBy(sw.key);
+      swEls[sw.key].classList.toggle('locked', !!lock);
+      swEls[sw.key].title = lock ? `Locked out: ${lock}` : '';
+    }
+    if (ilocks.length) {
+      const reasons = ilocks.map((il) => dev.tripped[il.key]).filter(Boolean);
+      alarm.hidden = !reasons.length;
+      alarmText.textContent = reasons.join(' · ');
+      guardLine.textContent = ilocks.map((il) => il.describe?.(dev.snapshot, dev.interlockValues(il.key)) ?? il.label).join(' · ');
     }
     for (const g of d.groups ?? []) {
       groupTitleEls[g.key].textContent = dev.groupLabel(g.key) ?? g.label;
@@ -236,6 +272,13 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         const i = h('input', { type: 'number', min: sp.min, max: sp.max, step: sp.step, value: dev.limits[sp.key] ?? '' }) as HTMLInputElement;
         return { sp, i };
       });
+      const ilInputs = ilocks.flatMap((il) =>
+        il.settings.map((st) => ({
+          k: `${il.key}.${st.key}`,
+          st,
+          i: h('input', { type: 'number', min: st.min, max: st.max, step: st.step, value: dev.interlockValues(il.key)[st.key] }) as HTMLInputElement,
+        })),
+      );
       return h(
         'form',
         {
@@ -243,12 +286,22 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
           onsubmit: (e: Event) => {
             e.preventDefault();
             for (const { sp, i } of inputs) dev.limits[sp.key] = i.value === '' ? undefined : Math.min(Number(i.value), sp.max);
+            for (const { k, st, i } of ilInputs) {
+              const v = Number(i.value);
+              if (i.value === '' || !Number.isFinite(v) || v === st.default) delete dev.interlockSettings[k];
+              else dev.interlockSettings[k] = Math.min(st.max, Math.max(st.min, v));
+            }
+            if (ilInputs.length) app.change(`${dev.label}: interlock settings ${ilInputs.map(({ st, k }) => `${st.label.toLowerCase()} ${dev.interlockSettings[k] ?? st.default} ${st.unit}`).join(', ')}`);
             app.save();
+            update();
             close(true);
           },
         },
         h('p', { class: 'hint' }, 'Setpoints above your limit are refused. Leave empty to use the device maximum.'),
         ...inputs.map(({ sp, i }) => h('label', {}, `Max ${sp.label.toLowerCase()} (${sp.unit}, device max ${sp.max})`, i)),
+        ilInputs.length > 0 && h('h3', {}, 'Heater interlock'),
+        ilInputs.length > 0 && h('p', { class: 'hint' }, 'The app switches the heater off and locks it out when a rule trips. It only works while this page is open; set the safety limit on the unit itself as the backstop.'),
+        ...ilInputs.map(({ st, i }) => h('label', {}, `${st.label} (${st.unit})`, i, st.hint && h('span', { class: 'hint' }, st.hint))),
         h('div', { class: 'actions' }, h('button', { class: 'primary', type: 'submit' }, 'Save')),
       );
     });

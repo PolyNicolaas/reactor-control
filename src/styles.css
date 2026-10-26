@@ -323,3 +323,20 @@ main { padding: 20px; display: grid; gap: 20px; }
   .panel, .panel.camera-panel { grid-template-columns: 1fr; }
   .log-card { margin: 0 12px 140px; }
 }
+
+/* Interlock */
+.status[data-state='interlock'] { background: var(--bad); color: #fff; }
+.alarm { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 18%, transparent); border: 2px solid var(--bad); }
+.alarm[hidden] { display: none; }
+.alarm strong { color: var(--bad); text-transform: uppercase; letter-spacing: .03em; }
+.alarm .alarm-text { flex: 1 1 240px; }
+.switch.locked { opacity: .55; outline: 2px dashed var(--bad); }
+.guard-line { font-size: .8rem; opacity: .75; }
+
+/* Set vs actual line */
+.sp-read[data-state='moving'] { color: var(--warn); }
+.sp-read[data-state='mismatch'], .sp-read[data-state='stuck'] { color: var(--bad); font-weight: 600; }
+.sp-read[data-state='off'] { color: var(--ink-2); }
+button.attention { outline: 2px solid var(--bad); outline-offset: 1px; animation: attn 1.2s ease-in-out infinite; }
+@keyframes attn { 50% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { button.attention { animation: none; } }

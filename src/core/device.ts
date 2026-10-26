@@ -1,7 +1,7 @@
 import { Emitter } from './emitter';
 import { sleep } from './serialTransport';
 import { NAMUR, type Protocol } from './protocol';
-import { parseNumber, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
+import { parseNumber, type SetpointSpec, type Tracking, type SerialLink, type DeviceDriver, type DeviceSnapshot, type DeviceStatus, type Transport } from './types';
 
 export interface DeviceEvent {
   t: number;              // epoch ms
@@ -28,6 +28,10 @@ export class DeviceInstance {
    */
   readonly changes = new Emitter<string>();
   private active: Record<string, boolean | undefined> = {};
+  /** Value last applied from this page per setpoint (the unit may drop it, e.g. on start). */
+  intended: Record<string, number> = {};
+  private switchedOnAt: Record<string, number> = {};
+  private actualHist: Record<string, { t: number; v: number }[]> = {};
   private lastWrite: Record<string, number> = {};
 
   snapshot: DeviceSnapshot = { values: {}, gross: {}, setpoints: {}, switches: {} };
@@ -47,6 +51,14 @@ export class DeviceInstance {
   link?: SerialLink;
   /** User names for the driver's groups, e.g. pump channel 1 -> "Reagent A". */
   groupLabels: Record<string, string> = {};
+  /** User overrides of interlock settings, keyed "<interlock>.<setting>". */
+  interlockSettings: Record<string, number> = {};
+  /** Latched interlock trips: interlock key -> reason. Cleared only by resetInterlock(). */
+  tripped: Record<string, string> = {};
+  /** Fires with "<label>: <reason>" when an interlock trips (for an alarm in the UI). */
+  readonly tripped$ = new Emitter<string>();
+  private interlockMem: Record<string, Record<string, unknown>> = {};
+  private lastOffSent: Record<string, number> = {};
 
   private polling = false;
   private failures = 0;
@@ -99,6 +111,7 @@ export class DeviceInstance {
   get status(): DeviceStatus {
     if (!this.connected) return 'Disconnected';
     if (!this.responding) return 'No reply';
+    if (Object.keys(this.tripped).length) return 'Interlock';
     return this.driver.status(this.snapshot);
   }
 
@@ -236,7 +249,129 @@ export class DeviceInstance {
         }
       }
     }
-    if (this.responding) this.detectChanges(prevSetpoints);
+    if (this.responding) {
+      const t = Date.now();
+      for (const sp of this.driver.setpoints) {
+        const v = sp.actualKey ? this.snapshot.values[sp.actualKey] : undefined;
+        if (v === undefined) continue;
+        const hh = (this.actualHist[sp.key] ??= []);
+        hh.push({ t, v });
+        while (hh.length && t - hh[0].t > 120_000) hh.shift();
+      }
+      await this.checkInterlocks();
+      this.detectChanges(prevSetpoints);
+    }
+  }
+
+  /** Settings for one interlock: the driver defaults with the user's overrides on top. */
+  interlockValues(key: string): Record<string, number> {
+    const il = this.driver.interlocks?.find((x) => x.key === key);
+    const out: Record<string, number> = {};
+    for (const st of il?.settings ?? []) out[st.key] = this.interlockSettings[`${key}.${st.key}`] ?? st.default;
+    return out;
+  }
+
+  /**
+   * Run every interlock against the latest readings. A trip switches its functions off (whatever state
+   * the app thinks they are in, since the keypad may have turned them on) and latches. While the
+   * condition lasts, the off command is repeated every 5 s in case someone turns it back on at the unit.
+   */
+  private async checkInterlocks(): Promise<void> {
+    const now = Date.now();
+    for (const il of this.driver.interlocks ?? []) {
+      const mem = (this.interlockMem[il.key] ??= {});
+      const reason = il.check(this.snapshot, this.interlockValues(il.key), mem, now);
+      if (!reason) continue;
+      const fresh = !this.tripped[il.key];
+      if (!fresh && now - (this.lastOffSent[il.key] ?? 0) < 5000) continue;
+      if (fresh) this.tripped[il.key] = reason;
+      this.lastOffSent[il.key] = now;
+      for (const key of il.switches) {
+        const sw = this.driver.switches.find((x) => x.key === key);
+        if (!sw) continue;
+        try {
+          await this.send(sw.off);
+        } catch (e) {
+          this.log('error', `Interlock could not send ${sw.off}: ${(e as Error).message}`);
+        }
+        this.snapshot.switches[key] = false;
+      }
+      if (fresh) {
+        const names = il.switches.map((k) => this.driver.switches.find((x) => x.key === k)?.label ?? k).join(', ').toLowerCase();
+        this.log('error', `INTERLOCK: ${names} off. ${reason}`);
+        this.changes.emit(`interlock tripped, ${names} off: ${reason}`);
+        this.tripped$.emit(`${this.label}: ${reason}`);
+      }
+    }
+  }
+
+  /** Interlocks that lock out this switch right now. */
+  lockedBy(switchKey: string): string | undefined {
+    for (const il of this.driver.interlocks ?? []) {
+      if (il.switches.includes(switchKey) && this.tripped[il.key]) return this.tripped[il.key];
+    }
+    return undefined;
+  }
+
+  /** Band within which the actual counts as "at setpoint". */
+  static band(sp: SetpointSpec, set: number): number {
+    if (sp.band !== undefined) return sp.band;
+    return sp.unit === '°C' ? 2 : Math.max(5, Math.abs(set) * 0.03);
+  }
+
+  /**
+   * Set value vs actual for one setpoint, as one line for the card. Tells the user plainly when the
+   * function is on but the actual is not going to the set value, and when the unit's set value is not
+   * what was last applied here (the EUROSTAR can come back from Motor off with no speed until Apply).
+   */
+  tracking(key: string, now = Date.now()): Tracking {
+    const sp = this.driver.setpoints.find((x) => x.key === key);
+    if (!sp) return { state: 'unknown', text: '' };
+    const set = this.snapshot.setpoints[key];
+    const intended = this.intended[key];
+    const actual = sp.actualKey ? this.snapshot.values[sp.actualKey] : undefined;
+    const on = sp.switchKey ? this.snapshot.switches[sp.switchKey] : true;
+    const swLabel = this.driver.switches.find((x) => x.key === sp.switchKey)?.label ?? 'It';
+    const u = sp.unit;
+    const f = (v: number | undefined, d = sp.decimals) => (v === undefined ? '—' : v.toFixed(d));
+    const base = { set, intended, actual };
+    const mismatch = intended !== undefined && set !== undefined &&
+      Math.abs(set - intended) > Math.max(sp.tolerance, (sp.toleranceRel ?? 0) * Math.abs(intended)) &&
+      this.pending[key] === undefined;
+    if (mismatch) {
+      return { ...base, state: 'mismatch', text: `Unit is set to ${f(set)} ${u}, not the ${f(intended)} ${u} you applied. Apply again to send it.` };
+    }
+    if (!on) return { ...base, state: 'off', text: `${swLabel} off · set ${f(set)} ${u} · actual ${f(actual, actual !== undefined && u === '°C' ? 1 : 0)} ${u}` };
+    if (set === undefined || actual === undefined) return { ...base, state: 'unknown', text: `Set ${f(set)} ${u} · actual ${f(actual)} ${u}` };
+    const band = DeviceInstance.band(sp, set);
+    const a = f(actual, u === '°C' ? 1 : 0);
+    if (Math.abs(actual - set) <= band) return { ...base, state: 'ok', text: `Set ${f(set)} ${u} · actual ${a} ${u} ✓` };
+    const grace = (sp.graceS ?? 8) * 1000;
+    const since = Math.max(this.switchedOnAt[sp.switchKey ?? ''] ?? 0, this.lastWrite[key] ?? 0);
+    const dir = set > actual ? 'rising' : 'falling';
+    // A heater cannot cool: above the set value it can only wait.
+    if (u === '°C' && actual > set) return { ...base, state: 'moving', text: `Set ${f(set)} ${u} · actual ${a} ${u}, above set (cooling)` };
+    if (now - since < grace) return { ...base, state: 'moving', text: `Set ${f(set)} ${u} · actual ${a} ${u}, ${dir}…` };
+    // Moving toward the set value over the grace window?
+    const hh = this.actualHist[key] ?? [];
+    const old = [...hh].reverse().find((x) => now - x.t >= grace);
+    const progress = old ? Math.abs(old.v - set) - Math.abs(actual - set) : 0;
+    if (old && progress > Math.max(band / 4, 0.2)) return { ...base, state: 'moving', text: `Set ${f(set)} ${u} · actual ${a} ${u}, ${dir}…` };
+    return { ...base, state: 'stuck', text: `${swLabel} is on but ${sp.label.toLowerCase()} is ${a} ${u}, not ${f(set)} ${u}. Not ${dir === 'rising' ? 'getting there' : 'coming down'}; apply the setpoint again or check the unit.` };
+  }
+
+  /** Clear a trip. Refused (throws) while the condition is still present. */
+  resetInterlock(key: string): void {
+    const il = this.driver.interlocks?.find((x) => x.key === key);
+    if (!il || !this.tripped[key]) return;
+    // Check against a copy of the history, so a reset attempt does not add a sample.
+    const mem = this.interlockMem[key] ?? {};
+    const copy = { ...mem, h: [...((mem.h as unknown[]) ?? [])] };
+    const still = il.check(this.snapshot, this.interlockValues(key), copy, Date.now());
+    if (still) throw new Error(`Cannot reset yet: ${still}`);
+    delete this.tripped[key];
+    this.log('info', `Interlock reset by user (was: ${il.label})`);
+    this.changed.emit(this);
   }
 
   /** Report activity crossing its threshold and setpoints changed outside the card. */
@@ -326,6 +461,7 @@ export class DeviceInstance {
     const v = this.checkSetpoint(key, value);
     const sp = this.driver.setpoints.find((s) => s.key === key)!;
     this.pending[key] = v;
+    this.intended[key] = v;
     this.lastWrite[key] = Date.now();
     this.changed.emit(this);
     try {
@@ -341,7 +477,12 @@ export class DeviceInstance {
   async setSwitch(key: string, on: boolean): Promise<void> {
     const sw = this.driver.switches.find((s) => s.key === key);
     if (!sw) throw new Error(`No switch ${key}`);
+    if (on) {
+      const lock = this.lockedBy(key);
+      if (lock) throw new Error(`${sw.label} is locked out by the interlock: ${lock}. Reset it on the card first.`);
+    }
     await this.send(on ? sw.on : sw.off);
+    if (on && !this.snapshot.switches[key]) this.switchedOnAt[key] = Date.now();
     this.snapshot.switches[key] = on;
     this.changed.emit(this);
   }

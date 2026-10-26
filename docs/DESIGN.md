@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-22 (RET balance; units with a blank stored name).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (RET plate/probe interlock; set-vs-actual line on every setpoint).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -49,11 +49,11 @@ The station workflow (D23):
 
 | What | Where | When / how long | Notes |
 | --- | --- | --- | --- |
-| Page setup: devices, names, colours, order, user limits, serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
+| Page setup: devices, names, colours, order, user limits, interlock settings (D32), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
 | Chart view: time range, hidden lanes/channels | Browser storage (`reactor-control.chart`) | Same | |
 | Last hour of samples (for the chart) | Memory | Lost on reload | |
 | **Recording — samples**, 1 per second per device (download: two CSV files, or one zip with `samples.csv`, `events.csv`, `media.csv` and the media folders when a camera recorded): every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
-| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
+| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, interlock trips (with the reason; also trigger a camera clip) and resets, interlock setting changes | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
 | **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
 | **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31) | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
@@ -135,6 +135,8 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D29 | 2026-10-22 | **RET balance:** mass shown in whole grams; the app tares in software (net = gross − stored tare, all three recorded); mass is blank while heating or stirring and until the weighing key (G) is pressed and the reading settles (the RET answers exactly 0.0 outside weighing mode, so 0 counts as "not weighing"; an empty plate therefore shows the prompt too); Tare only when settled | The RET has no remote tare or weighing start, weighs only with heating and stirring off, and reports whole grams (manual p. 25, 35; bench 2026-10-22) |
 | D30 | 2026-10-22 | A unit that answers with correct framing but a **blank stored name** (all 0xFF) is treated as a working unit: it connects when its model is picked in Add device; after a reload it is reattached to the port no other model claims | Our RET's stored name is erased (`IN_NAME` → `ff`×7, `IN_TYPE` → `1`); refusing it would block a working unit. `OUT_NAME IKARET` may restore the name (untested) |
 | D31 | 2026-10-22 | **Any change triggers the camera**: setpoint or switch changes on the cards, stirring starting or stopping (from the speed reading, so also from the unit's own controls), setpoints changed on the unit, pump channels stopping on the pump, Stop all and notes. With a camera on the page and nothing recording, the first change starts the recording automatically; the clip still covers the 60 s before it | Changes made at the hood must be captured even if nobody pressed Start recording; first step toward always-on recording (D14) |
+| D32 | 2026-10-26 | **RET plate/probe interlock** (software). After every poll the app checks: plate above an absolute maximum (default 250 °C); plate more than *N* °C above the temperature setpoint (default 50) while not cooling; plate ≥ 40 °C above the probe for 5 min while the probe rises < 1 °C and is below setpoint. Any rule sends `STOP_1` (whatever the app thinks the heater state is, so keypad heating is covered), latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until the user resets on the card; reset is refused while a rule still holds. All four numbers are per unit in Limits and saved with the page. Trips and resets are logged as changes (camera clip). Generic `interlocks` on the driver, so other units can get their own | With the PT100 plugged in the RET heats the plate until the probe reaches setpoint; a probe left out of the medium sends the plate to the unit's safety limit (up to 380 °C) and can burn someone. Not cooling, so lowering the setpoint over a hot plate does not trip; the probe check catches a stray probe long before setpoint + 50 at high setpoints. It only works while the page is open and the unit answers, so the unit's own safety-limit setting stays the backstop (§13) |
+| D33 | 2026-10-26 | **Set vs actual on every setpoint** with a driving switch: the line under each setpoint shows "Set X · actual Y" and its state: on target ✓, rising/falling, off, **unit set value differs from what you applied** (e.g. EUROSTAR comes back from Motor off with no speed), or **on but not following** after a grace time (8 s; 90 s for temperature). The last two turn red and make Apply flash. The app does not resend setpoints by itself | After Motor off/on the EUROSTAR does not run until the speed is applied again (user report 2026-10-26); the user wants that explicit step kept but made obvious, for every setting |
 
 ## 6. Programs (draft)
 
@@ -318,6 +320,7 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
+- **The RET interlock (D32) is software**: it cannot act if the browser, the Pi or the USB link is down. The hardware cut-off is the RET's own safety temperature (read as "Safety limit", set on the unit, default up to 380 °C): set it on each unit to just above the hottest plate a reaction needs. The interlock thresholds are first guesses from the simulator; check them on the bench with a real flask/oil bath (a big bath may need a larger "plate above setpoint").
 - RET balance: mass needs the weighing key (G) pressed on the unit; the tare is the app's, not the RET's (its display shows gross).
 - Our RET has a blank stored name, so Auto-detect cannot identify it; pick the model in Add device (D30).
 
@@ -336,6 +339,10 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Should any change start a recording even without a camera (one step closer to always-on recording, D14)?
 - How each Pi gets its station name (kiosk URL parameter, or registered on the server).
 - Does `OUT_NAME IKARET` restore our RET's name permanently?
+- RET: how far above setpoint does the plate run during a normal heat-up (small flask, large flask, oil bath)? Sets the default for "plate above setpoint" (D32).
+- RET: what does `IN_PV_1` read with the probe unplugged, and does the unit then regulate on the plate? Should the interlock also refuse heating when the probe reading is missing?
+- RET: can the safety temperature be read as the set value (`IN_SP_3`) and should the app warn when it is above the interlock's plate maximum? Should the watchdog (`OUT_WD2` with `OUT_SP_12`) be armed so the unit drops to a safe temperature if the Pi dies?
+- EUROSTAR: after `STOP_4` / `START_4`, does `IN_SP_4` read 0 (set speed cleared) or the old value with the motor not turning? The card handles both (D33); the answer decides whether the driver should resend the speed on Motor on.
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
 ## Keeping this document current
