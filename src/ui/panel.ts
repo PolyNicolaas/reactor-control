@@ -2,6 +2,7 @@ import type { App } from '../core/app';
 import type { DeviceInstance } from '../core/device';
 import { decimalsFor, fmt, h, openDialog, toast } from './dom';
 import { openTerminal } from './terminal';
+import type { CautionList } from '../core/types';
 
 /** One generic panel, drawn entirely from the device's driver description. */
 export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: DeviceInstance) => void): { el: HTMLElement; update: () => void; handle: HTMLElement } {
@@ -138,6 +139,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
   });
   const alarm = h('div', { class: 'alarm', role: 'alert', hidden: true }, h('strong', {}, 'Heater locked out'), alarmText, resetBtn);
   const guardLine = h('div', { class: 'guard-line' });
+  const hotEl = h('span', { class: 'hot-badge', role: 'status', hidden: true });
+  const cautions = (d.cautions ?? []).map((c) => cautionBlock(app, dev, c));
   dev.tripped$.on((text) => toast(`INTERLOCK — ${text}`, 'error'));
 
   // Devices with groups (pump channels) get one compact block per group; others get the
@@ -170,6 +173,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
         h('div', { class: 'switches' }, ...d.switches.map(switchFor)),
       ];
   if (ilocks.length) body.unshift(alarm), body.push(guardLine);
+  body.push(...cautions.map((c) => c.el));
 
   const reconnectBtn = h('button', { class: 'primary', onclick: () => onReconnect(dev) }, 'Reconnect');
   const offline = h('div', { class: 'offline' }, h('p', {}, 'Not connected. Nothing is sent to this unit.'), reconnectBtn);
@@ -183,6 +187,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       {},
       handle,
       h('div', { class: 'dev-title' }, titleEl, h('span', { class: 'dev-model' }, `${d.displayName}${dev.transport.kind === 'sim' ? ' · simulated' : ''}`)),
+      hotEl,
       statusEl,
       menu,
     ),
@@ -196,6 +201,13 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     statusEl.dataset.state = st.toLowerCase().replace(/\s+/g, '-');
     titleEl.textContent = dev.label;
     el.classList.toggle('is-offline', !dev.connected);
+    const hs = dev.hotState;
+    hotEl.hidden = !hs;
+    hotEl.textContent = hotText(hs);
+    hotEl.dataset.state = hs?.state ?? '';
+    hotEl.title = hs ? 'The plate is hot. Do not touch it, even with the heater off.' : '';
+    el.classList.toggle('is-hot', !!hs);
+    for (const c of cautions) c.update();
     for (const r of shownReadings) {
       const valid = dev.isValid(r.key);
       const dec = r.decimals ?? decimalsFor(r.unit);
@@ -247,7 +259,7 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       const reasons = ilocks.map((il) => dev.tripped[il.key]).filter(Boolean);
       alarm.hidden = !reasons.length;
       alarmText.textContent = reasons.join(' · ');
-      guardLine.textContent = ilocks.map((il) => il.describe?.(dev.snapshot, dev.interlockValues(il.key)) ?? il.label).join(' · ');
+      guardLine.textContent = ilocks.map((il) => il.describe?.(dev.snapshot, dev.interlockValues(il.key), dev.interlockMemory(il.key)) ?? il.label).join(' · ');
     }
     for (const g of d.groups ?? []) {
       groupTitleEls[g.key].textContent = dev.groupLabel(g.key) ?? g.label;
@@ -345,4 +357,68 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
 
   update();
   return { el, update, handle };
+}
+
+/** Text for a HOT badge, or '' when not hot. Used on live cards and on cards of units not connected. */
+export function hotText(h: { state: 'hot' | 'maybe'; v: number; t: number } | undefined): string {
+  if (!h) return '';
+  if (h.state === 'hot') return `HOT ${Math.round(h.v)} °C`;
+  const at = new Date(h.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `MAY BE HOT · ${Math.round(h.v)} °C at ${at}`;
+}
+
+/** The caution icon and its expandable list (e.g. solvent autoignition temperatures). */
+function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTMLElement; update: () => void } {
+  const count = h('span', { class: 'caution-count' });
+  const refEl = h('p', { class: 'caution-ref' });
+  const tbody = h('tbody');
+  const el = h(
+    'details',
+    { class: 'caution' },
+    h('summary', { title: c.title }, h('span', { class: 'caution-icon', 'aria-hidden': 'true' }, '⚠'), h('span', {}, c.title), count),
+    h('p', { class: 'hint' }, c.intro),
+    refEl,
+    h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Substance'), h('th', {}, `Ignites at (${c.unit})`), h('th', {}, 'Source / note'), c.cap ? h('th', {}, '') : false)), tbody),
+    h('p', { class: 'hint caution-src' }, `Sources: ${c.sources}.`),
+  ) as HTMLDetailsElement;
+  let lastKey = '';
+  function update() {
+    const ref = c.reference(dev.snapshot, (k) => dev.interlockValues(k));
+    refEl.textContent = ref.label;
+    const flagged = c.items.filter((it) => it.value <= ref.value).length;
+    const near = c.items.filter((it) => it.value > ref.value && it.value <= ref.value + c.nearBy).length;
+    count.textContent = flagged ? ` · ${flagged} at risk` : near ? ` · ${near} within ${c.nearBy} ${c.unit}` : '';
+    el.dataset.level = flagged ? 'danger' : near ? 'near' : 'ok';
+    const capNow = c.cap ? dev.interlockValues(c.cap.interlock)[c.cap.setting] : undefined;
+    const key = `${Math.round(ref.value)}|${capNow}`;
+    if (key === lastKey) return; // rebuild rows only when something visible changes
+    lastKey = key;
+    tbody.replaceChildren(
+      ...c.items.map((it) => {
+        const level = it.value <= ref.value ? 'danger' : it.value <= ref.value + c.nearBy ? 'near' : '';
+        let btn: HTMLElement | false = false;
+        if (c.cap) {
+          const capV = Math.floor((it.value - c.cap.margin) / 5) * 5;
+          const st = dev.driver.interlocks?.find((x) => x.key === c.cap!.interlock)?.settings.find((x) => x.key === c.cap!.setting);
+          if (st && capNow !== undefined && capV < capNow && capV >= st.min) {
+            btn = h('button', {
+              type: 'button',
+              class: 'small',
+              title: `Set "${st.label}" to ${capV} ${st.unit} (${c.cap.margin} ${st.unit} below ${it.name})`,
+              onclick: () => {
+                if (!confirm(`Set "${st.label}" for ${dev.label} to ${capV} ${st.unit}, ${c.cap!.margin} ${st.unit} below the autoignition temperature of ${it.name}?`)) return;
+                dev.interlockSettings[`${c.cap!.interlock}.${c.cap!.setting}`] = capV;
+                app.change(`${dev.label}: ${st.label.toLowerCase()} set to ${capV} ${st.unit} for ${it.name}`);
+                app.save();
+                toast(`${st.label}: ${capV} ${st.unit}`);
+                update();
+              },
+            }, c.cap.label(capV));
+          }
+        }
+        return h('tr', { 'data-level': level }, h('td', {}, it.name), h('td', { class: 'num' }, String(it.value)), h('td', { class: 'note' }, it.note ?? ''), c.cap ? h('td', {}, btn) : false);
+      }),
+    );
+  }
+  return { el, update };
 }

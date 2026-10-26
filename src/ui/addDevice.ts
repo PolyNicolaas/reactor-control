@@ -124,7 +124,7 @@ export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
     if (owner) throw new Error(`That port is already used by "${owner.label}".`);
     app.forgetMissing(s.id);
     const drv = getDriver(s.model);
-    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, link: s.link, groupLabels: s.groupLabels, interlocks: s.interlocks, transport: transportFor(port, s.link ?? defaultLink(drv)) });
+    await app.addDevice({ model: s.model, label: s.label, id: s.id, color: s.color, limits: s.limits, link: s.link, groupLabels: s.groupLabels, interlocks: s.interlocks, lastHot: s.lastHot, transport: transportFor(port, s.link ?? defaultLink(drv)) });
   } catch (e) {
     if ((e as Error).name !== 'NotFoundError') toast((e as Error).message, 'error');
   }

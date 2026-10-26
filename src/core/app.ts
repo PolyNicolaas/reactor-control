@@ -23,6 +23,8 @@ export interface SavedDevice {
   tares?: Record<string, number>;
   groupLabels?: Record<string, string>;
   interlocks?: Record<string, number>;
+  /** Last hot-surface reading, so a reload with the unit unplugged still warns "may be hot". */
+  lastHot?: { v: number; t: number };
 }
 
 export interface SavedCamera {
@@ -113,13 +115,14 @@ export class App {
   }
 
   /** Create a device instance, connect it and add it to the page. */
-  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number>; groupLabels?: Record<string, string>; interlocks?: Record<string, number> }): Promise<DeviceInstance> {
+  async addDevice(opts: { model: string; label: string; transport: Transport; id?: string; color?: string; limits?: SavedDevice['limits']; link?: SerialLink; tares?: Record<string, number>; groupLabels?: Record<string, string>; interlocks?: Record<string, number>; lastHot?: { v: number; t: number } }): Promise<DeviceInstance> {
     const driver = getDriver(opts.model);
     const dev = new DeviceInstance(opts.id ?? this.newId(driver.model), driver, opts.label, opts.color ?? this.nextColor(), opts.transport);
     if (opts.limits) dev.limits = { ...opts.limits };
     dev.link = opts.link;
     if (opts.tares) dev.tares = { ...opts.tares };
     if (opts.interlocks) dev.interlockSettings = { ...opts.interlocks };
+    if (opts.lastHot) dev.lastHot = { ...opts.lastHot };
     dev.changed.on(() => this.saveSoon());
     if (opts.groupLabels) dev.groupLabels = { ...opts.groupLabels };
     dev.changed.on(() => this.changed.emit());
@@ -264,6 +267,7 @@ export class App {
         tares: Object.keys(d.tares).length ? d.tares : undefined,
         groupLabels: Object.keys(d.groupLabels).length ? d.groupLabels : undefined,
         interlocks: Object.keys(d.interlockSettings).length ? d.interlockSettings : undefined,
+        lastHot: d.lastHot,
       };
     });
     this.config.devices.push(...this.missing);
@@ -328,7 +332,7 @@ export class App {
       }
       if (transport) {
         this.missing = this.missing.filter((m) => m.id !== s.id);
-        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares, groupLabels: s.groupLabels, interlocks: s.interlocks });
+        await this.addDevice({ model: s.model, label: s.label, transport, id: s.id, color: s.color, limits: s.limits, link: s.link, tares: s.tares, groupLabels: s.groupLabels, interlocks: s.interlocks, lastHot: s.lastHot });
       } else {
         missing.push(s);
       }

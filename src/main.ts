@@ -6,7 +6,7 @@ import { openAddDevice, reconnectDevice, reconnectSaved } from './ui/addDevice';
 import { liveChart } from './ui/chart';
 import { eventsCsv, runFileStem, samplesCsv } from './ui/csv';
 import { download, h, toast } from './ui/dom';
-import { devicePanel } from './ui/panel';
+import { devicePanel, hotText } from './ui/panel';
 import { getDriver } from './devices/registry';
 import type { CameraModule } from './camera/camera';
 import { cameraPanel, openAddCamera } from './ui/cameraPanel';
@@ -80,6 +80,13 @@ function renderPanels() {
           'section',
           { class: 'panel is-missing', style: `--dev:${m.color}` },
           h('header', {}, h('span', { class: 'dot' }), h('div', { class: 'dev-title' }, h('span', { class: 'dev-label' }, m.label), h('span', { class: 'dev-model' }, getDriver(m.model).displayName))),
+          (() => {
+            // A hotplate that was hot when last seen may still be hot.
+            const hot = getDriver(m.model).hot;
+            const lh = m.lastHot;
+            const show = hot && lh && lh.v >= hot.above && Date.now() - lh.t < 60 * 60_000;
+            return show ? h('p', { class: 'hot-badge', 'data-state': 'maybe' }, hotText({ state: 'maybe', ...lh })) : false;
+          })(),
           h('p', {}, 'Saved on this page, but its USB port is not connected or not yet allowed in this browser.'),
           h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => reconnectSaved(app, m) }, 'Reconnect'), h('button', { onclick: () => app.forgetMissing(m.id) }, 'Forget')),
         ),

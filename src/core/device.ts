@@ -58,6 +58,8 @@ export class DeviceInstance {
   /** Fires with "<label>: <reason>" when an interlock trips (for an alarm in the UI). */
   readonly tripped$ = new Emitter<string>();
   private interlockMem: Record<string, Record<string, unknown>> = {};
+  /** Last reading of the driver's `hot` key and when it was taken (survives a disconnect). */
+  lastHot?: { v: number; t: number };
   private lastOffSent: Record<string, number> = {};
 
   private polling = false;
@@ -251,6 +253,8 @@ export class DeviceInstance {
     }
     if (this.responding) {
       const t = Date.now();
+      const hv = this.driver.hot ? this.snapshot.values[this.driver.hot.key] : undefined;
+      if (hv !== undefined) this.lastHot = { v: hv, t };
       for (const sp of this.driver.setpoints) {
         const v = sp.actualKey ? this.snapshot.values[sp.actualKey] : undefined;
         if (v === undefined) continue;
@@ -303,6 +307,24 @@ export class DeviceInstance {
         this.tripped$.emit(`${this.label}: ${reason}`);
       }
     }
+  }
+
+  /** The interlock's private memory (e.g. a learned steady gap), for describe(). */
+  interlockMemory(key: string): Record<string, unknown> | undefined {
+    return this.interlockMem[key];
+  }
+
+  /**
+   * HOT state for the card: 'hot' while the reading is at or above the threshold, 'maybe' when the unit is
+   * not answering and the last reading was hot, else undefined.
+   */
+  get hotState(): { state: 'hot' | 'maybe'; v: number; t: number } | undefined {
+    const hot = this.driver.hot;
+    if (!hot || !this.lastHot || this.lastHot.v < hot.above) return undefined;
+    const live = this.connected && this.responding && this.snapshot.values[hot.key] !== undefined;
+    // A plate last seen hot over an hour ago has cooled; stop warning.
+    if (!live && Date.now() - this.lastHot.t > 60 * 60_000) return undefined;
+    return { state: live ? 'hot' : 'maybe', ...this.lastHot };
   }
 
   /** Interlocks that lock out this switch right now. */

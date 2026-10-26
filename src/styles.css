@@ -340,3 +340,32 @@ main { padding: 20px; display: grid; gap: 20px; }
 button.attention { outline: 2px solid var(--bad); outline-offset: 1px; animation: attn 1.2s ease-in-out infinite; }
 @keyframes attn { 50% { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { button.attention { animation: none; } }
+
+/* HOT badge */
+.hot-badge { font-weight: 800; font-size: 12px; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px; background: #d9480f; color: #fff; white-space: nowrap; }
+.hot-badge[hidden] { display: none; }
+.hot-badge[data-state='hot'] { animation: hotpulse 1.6s ease-in-out infinite; }
+.hot-badge[data-state='maybe'] { background: color-mix(in srgb, #d9480f 18%, transparent); color: #d9480f; border: 1px dashed #d9480f; }
+p.hot-badge { display: inline-block; margin: 4px 0; }
+.panel.is-hot { box-shadow: 0 0 0 2px #d9480f inset; }
+@keyframes hotpulse { 50% { opacity: .65; } }
+@media (prefers-reduced-motion: reduce) { .hot-badge[data-state='hot'] { animation: none; } }
+
+/* Caution list */
+.caution { border: 1px solid var(--line, #8884); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.caution summary { cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600; list-style: none; }
+.caution summary::-webkit-details-marker { display: none; }
+.caution-icon { color: var(--warn); font-size: 16px; }
+.caution[data-level='danger'] { border-color: var(--bad); }
+.caution[data-level='danger'] .caution-icon, .caution[data-level='danger'] .caution-count { color: var(--bad); }
+.caution[data-level='near'] .caution-count { color: var(--warn); }
+.caution-ref { font-weight: 600; margin: 4px 0; }
+.caution table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+.caution th, .caution td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line, #8883); vertical-align: top; }
+.caution td.num { font-variant-numeric: tabular-nums; text-align: right; }
+.caution td.note { color: var(--ink-2); font-size: 12px; }
+.caution tr[data-level='danger'] td:first-child, .caution tr[data-level='danger'] td.num { color: var(--bad); font-weight: 700; }
+.caution tr[data-level='near'] td:first-child, .caution tr[data-level='near'] td.num { color: var(--warn); font-weight: 600; }
+.caution button.small { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
+.caution-src { font-size: 11px; }
+@media (max-width: 520px) { .caution td.note { display: none; } }

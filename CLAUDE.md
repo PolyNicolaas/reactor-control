@@ -5,6 +5,7 @@
   - §4 when the architecture changes
   - §5 for every new decision (dated, with the reason; never delete, supersede instead)
   - §10–§14 as roadmap items, ideas, limitations and open questions move
+  - §15 "Hotplate safety" whenever an interlock rule, a default, the HOT state or the solvent list changes
   - the "Last reviewed" date at the top
 - Keep `README.md` (setup, code map) and `docs/MODULES.md` (generated from `docs/modules.json`) in step too.
 - Device facts come from the manual: cite the page in `docs/manuals/<module>/notes.md`.

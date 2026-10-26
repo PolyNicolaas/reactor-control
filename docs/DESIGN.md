@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (RET plate/probe interlock, plate-above-setpoint default 30 °C; set-vs-actual line on every setpoint).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -49,11 +49,11 @@ The station workflow (D23):
 
 | What | Where | When / how long | Notes |
 | --- | --- | --- | --- |
-| Page setup: devices, names, colours, order, user limits, interlock settings (D32), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
+| Page setup: devices, names, colours, order, user limits, interlock settings (D32), last hot-plate reading (D36), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
 | Chart view: time range, hidden lanes/channels | Browser storage (`reactor-control.chart`) | Same | |
 | Last hour of samples (for the chart) | Memory | Lost on reload | |
 | **Recording — samples**, 1 per second per device (download: two CSV files, or one zip with `samples.csv`, `events.csv`, `media.csv` and the media folders when a camera recorded): every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
-| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, interlock trips (with the reason; also trigger a camera clip) and resets, interlock setting changes | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
+| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, interlock trips (with the reason; also trigger a camera clip) and resets, interlock setting changes (including "Cap plate at" from the solvent list) | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
 | **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
 | **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31) | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
@@ -138,6 +138,9 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D32 | 2026-10-26 | **RET plate/probe interlock** (software). After every poll the app checks: plate above an absolute maximum (default 250 °C); plate more than *N* °C above the temperature setpoint (default 50) while not cooling; plate ≥ 40 °C above the probe for 5 min while the probe rises < 1 °C and is below setpoint. Any rule sends `STOP_1` (whatever the app thinks the heater state is, so keypad heating is covered), latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until the user resets on the card; reset is refused while a rule still holds. All four numbers are per unit in Limits and saved with the page. Trips and resets are logged as changes (camera clip). Generic `interlocks` on the driver, so other units can get their own | With the PT100 plugged in the RET heats the plate until the probe reaches setpoint; a probe left out of the medium sends the plate to the unit's safety limit (up to 380 °C) and can burn someone. Not cooling, so lowering the setpoint over a hot plate does not trip; the probe check catches a stray probe long before setpoint + 50 at high setpoints. It only works while the page is open and the unit answers, so the unit's own safety-limit setting stays the backstop (§13) |
 | D33 | 2026-10-26 | **Set vs actual on every setpoint** with a driving switch: the line under each setpoint shows "Set X · actual Y" and its state: on target ✓, rising/falling, off, **unit set value differs from what you applied** (e.g. EUROSTAR comes back from Motor off with no speed), or **on but not following** after a grace time (8 s; 90 s for temperature). The last two turn red and make Apply flash. The app does not resend setpoints by itself | After Motor off/on the EUROSTAR does not run until the speed is applied again (user report 2026-10-26); the user wants that explicit step kept but made obvious, for every setting |
 | D34 | 2026-10-26 | RET interlock: default "max plate above setpoint" lowered from 50 °C to **30 °C** (supersedes that default in D32). Units with their own value in Limits keep it | User choice: trip earlier when the probe is out of the medium. Big flasks or oil baths that need a hotter plate raise it per unit |
+| D35 | 2026-10-26 | **Dynamic interlock rules on top of the static ones** (see §15): probe response scaled to the plate–probe gap (replaces the fixed 1 °C / 5 min check of D32), probe drop, probe lost, learned steady gap. **A dynamic rule may only add trips, never loosen a static one**; the learned gap only ever goes down for a given setpoint | Watching the plate against the probe catches a lifted probe, a probe in warm air, boiling dry and a lost stir bar long before setpoint + 30. Keeping the static rules as a floor means a wrong guess in a dynamic rule can only cause a false trip, never a missed one |
+| D36 | 2026-10-26 | **HOT state**: a RET card shows HOT from 50 °C plate, whether heating or not, during and after a run; after a disconnect or reload it shows MAY BE HOT with the last reading and time for up to 1 h | The plate stays hot long after the heater is off; burns happen after the run |
+| D37 | 2026-10-26 | **Solvent autoignition list** under a ⚠ on the RET card, not an automatic cap: rows at or below what the plate may reach now (the larger of the plate cut-off and the plate) are red, within 50 °C amber; each row offers "Cap plate at" (autoignition − 20 °C, after a confirm). The scientist decides | No program metadata yet to know which solvents are present; the list makes the hazard visible and the adjustment one click. Values are the lowest of several sources, which differ by tens of degrees |
 
 ## 6. Programs (draft)
 
@@ -219,6 +222,7 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 7. **Department server** (D20, D22, D23): define; build the container (usable on the Pi as the interim); set up host, HTTPS and backups; streaming of records and media to the host; feedback → private issues; packages for Luma; station names; NU login.
 8. ELN/Luma integration.
 9. Safety when a station fails (§4): RET watchdog, pump doses in Volume mode; more devices.
+10. **Hotplate safety, next steps** (§15): solvents from the program/reaction metadata set the plate cap automatically; RET watchdog mode 2; warn when the unit's safety limit is above the interlock maximum; set interlock defaults from recorded heat-ups.
 
 ## 11. Ideas and improvements
 
@@ -232,6 +236,9 @@ Add ideas here with a date; move them to the roadmap when decided.
 - 2026-10-22 — "Same as last time" device-to-role assignment when rerunning a program.
 - 2026-10-22 — Barcode/QR on the notebook page for the reaction ID.
 - 2026-10-22 — Station dashboard: all Pis and their reactions on one page, through the server (§12, Remote access).
+- 2026-10-26 — Hotplate: user marks which solvents are in the hood (ticks in the ⚠ list), the cap follows the lowest; later from the program's reagent list (§15).
+- 2026-10-26 — Hotplate: heat-up "fingerprint" per flask/bath size from recorded runs, to tune the dynamic rules per setup instead of one default.
+- 2026-10-26 — Hotplate: page-wide HOT banner (not only the card) and a sound on interlock trips, for someone at the hood not looking at the screen.
 
 ## 12. Department server and feedback (planned — D20, D21; to be defined)
 
@@ -321,7 +328,9 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
-- **The RET interlock (D32) is software**: it cannot act if the browser, the Pi or the USB link is down. The hardware cut-off is the RET's own safety temperature (read as "Safety limit", set on the unit, default up to 380 °C): set it on each unit to just above the hottest plate a reaction needs. The interlock thresholds are first guesses from the simulator; check them on the bench with a real flask/oil bath (a big bath may need a larger "plate above setpoint").
+- **Hotplate safety (§15) is software**: it cannot act if the browser, the Pi or the USB link is down. The hardware cut-off is the RET's own safety temperature (read as "Safety limit", set on the unit, default up to 380 °C): set it on each unit to just above the hottest plate a reaction needs. The interlock thresholds are first guesses from the simulator; check them on the bench with a real flask/oil bath (a big bath may need a larger "plate above setpoint", a slow one a lower "probe check: min rise", a big cold addition a larger "probe drop trip"; reflux starting at setpoint may trip the steady-gap rule).
+- The stir bar decoupling is not seen directly (speed shows the motor, not the bar); only its effect on the plate–probe gap is.
+- The solvent list is a fixed reference list, not tied to what is actually in the flask.
 - RET balance: mass needs the weighing key (G) pressed on the unit; the tare is the app's, not the RET's (its display shows gross).
 - Our RET has a blank stored name, so Auto-detect cannot identify it; pick the model in Add device (D30).
 
@@ -346,9 +355,57 @@ The Pi can run the same container for itself: pages served from `localhost` coun
 - EUROSTAR: after `STOP_4` / `START_4`, does `IN_SP_4` read 0 (set speed cleared) or the old value with the motor not turning? The card handles both (D33); the answer decides whether the driver should resend the speed on Motor on.
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
+## 15. Hotplate safety (RET)
+
+**The hazard.** With the PT100 plugged in, the RET heats the plate until the *probe* reaches the setpoint. A probe that is not in the medium never gets there, so the plate runs to the unit's safety limit (up to 380 °C). A plate that hot burns skin and can ignite solvent vapour.
+
+**Layers, outermost first.**
+
+| Layer | What it does | Works when the Pi/browser is down? | Status |
+| --- | --- | --- | --- |
+| Unit safety limit (set on the RET; read as "Safety limit", `IN_PV_3`) | Hard cut-off in the unit | **Yes** | Exists; set per unit to just above the hottest plate any reaction needs |
+| RET watchdog mode 2 (`OUT_WD2@m` + `OUT_SP_12@n`) | Unit drops to a safe temperature if the app stops talking | **Yes** | Planned; not bench-tested (§14) |
+| App interlock, static rules (D32, D34) | Heater off + lockout | No | Built |
+| App interlock, dynamic rules (D35) | Heater off + lockout, earlier | No | Built |
+| HOT state (D36), solvent list (D37) | Make the hazard visible; one-click cap | No | Built |
+
+**Interlock rules.** Checked after every poll (1 s), whether the heater was switched on from the card or the keypad. Any rule sends `STOP_1`, latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until **Reset interlock** on the card; reset is refused while a rule still holds. All numbers are per unit in ⋯ → Limits and saved with the page. Dynamic rules only add trips (D35).
+
+| # | Rule | Default | Catches |
+| --- | --- | --- | --- |
+| 1 | Plate above the maximum | 250 °C | Anything; also keep it below solvent autoignition (list below) |
+| 2 | Plate more than *N* above the setpoint and not cooling (lowering the setpoint over a hot plate does not trip) | 30 °C | Probe out of the medium at low and medium setpoints |
+| 3 | Probe response: plate ≥ 40 °C above the probe, probe below setpoint, and over 5 min the probe rises less than 3 % of the mean gap (never less than 1 °C) | 40 °C, 5 min, 3 % | Probe beside the flask or hanging in warm air; scales with how hard the plate is driving |
+| 4 | Probe drop: probe falls ≥ 10 °C within 2 min, setpoint unchanged, probe more than 5 °C below setpoint, heating | 10 °C | Probe pulled out mid-run (seconds, not minutes) |
+| 5 | Probe lost: probe reading missing or implausible (below −40 or above 400 °C) for 10 s while heating, after a probe was seen this session | — | Probe unplugged mid-run. Plate-only use without a probe is not affected |
+| 6 | Steady gap: once the probe has held the setpoint (±1.5 °C) for 3 min, the median plate–probe gap is learned (relearned on each setpoint change, only ever lowered); trip if the gap exceeds it by *N* for 30 s | 15 °C | Probe lifted slowly, flask boiling dry, stir bar decoupled, vessel moved |
+
+The card shows one line with what is enforced now ("Plate cut-off 80 °C · probe check on · steady gap 12 °C (+15 trips)").
+
+**HOT state (D36).** HOT and the plate temperature in the card header from 50 °C plate, heating or not; the card gets an orange edge. When the unit stops answering, is unplugged, or the page reloads without it, the card shows MAY BE HOT with the last reading and its time, for up to an hour (the last reading is saved with the page).
+
+**Solvent autoignition list (D37).** A ⚠ section on the RET card lists common lab solvents with the lowest autoignition temperature found across Engineering ToolBox, ABB's Hazlux ignition-temperature table, Wikipedia and McMaster chemistry safety (sources differ by tens of degrees; acetonitrile 220 vs 524 °C). Reference = the larger of the current plate cut-off and the plate reading. Red rows: the plate may reach that temperature now; amber: within 50 °C; the summary shows the count. Each row whose cap would tighten the maximum has **Cap plate at** (autoignition − 20 °C, rounded down to 5), which after a confirm sets "Max plate temperature" and is logged. It is a reminder, not an SDS; bath oils need their own SDS check. Data: `src/devices/solvents.ts`.
+
+**Overlooked situations considered (2026-10-26).**
+
+| Situation | Covered by |
+| --- | --- |
+| Probe left out of the flask at start | Rules 2, 3 |
+| Probe in warm air above the flask | Rule 3 |
+| Probe pulled out mid-run | Rule 4, then 6 and 2 |
+| Probe unplugged mid-run | Rule 5 (what the RET itself does then is an open question, §14) |
+| Setpoint above the solvent's boiling point / boiling dry | Rules 3 and 6 |
+| Stir bar decoupled | Rule 6, indirectly (§13) |
+| Solvent autoignition below the plate temperature | Solvent list + Cap plate at (manual); automatic cap is roadmap item 10 |
+| Plate still hot after the run | HOT / MAY BE HOT |
+| Pi, browser or USB failure | Unit safety limit only; watchdog mode 2 planned |
+| Heater started from the keypad | All rules act on the readings, not the app's switch state |
+
+**To check on the bench:** plate overshoot in normal heat-ups (small flask, large flask, oil bath) to set rules 2–3; how far a cold addition drops the probe (rule 4); reflux onset vs rule 6; what the RET reports and does with the probe unplugged; watchdog mode 2.
+
 ## Keeping this document current
 
-- **Every commit that changes behaviour updates this file**: §3 if anything recorded or saved changes, §4 if the architecture changes, §5 for any new decision, §10–§14 as items move. Update "Last reviewed" at the top.
+- **Every commit that changes behaviour updates this file**: §3 if anything recorded or saved changes, §4 if the architecture changes, §5 for any new decision, §10–§15 as items move. Update "Last reviewed" at the top.
 - Decisions are never deleted; add a new one that says which it supersedes (e.g. "supersedes D8").
 - New ideas go in §11 with a date; problems found in use go in §13 or as GitHub issues.
 - The same rule is in [`CLAUDE.md`](../CLAUDE.md) for AI-assisted changes and in the pull request template.

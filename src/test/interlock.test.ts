@@ -35,7 +35,7 @@ describe('RET plate/probe interlock rules', () => {
 
   it('probe check catches a flat probe before the plate gets very hot (high setpoint)', () => {
     const hit = run((t) => snap(Math.min(340, 22 + t * 0.25), 22, 200), 1800);
-    expect(hit?.r).toMatch(/has not risen in 5 min/);
+    expect(hit?.r).toMatch(/Probe rose only 0 °C in 5 min/);
     expect(22 + hit!.t * 0.25).toBeLessThan(200); // well before setpoint + 30
   });
 
@@ -125,5 +125,79 @@ describe('set vs actual line', () => {
     expect(dev.tracking('speed', Date.now() + 9000).state).toBe('stuck');
     expect(dev.tracking('speed', Date.now() + 9000).text).toMatch(/Motor is on but speed is 0 rpm, not 400 rpm/);
     await dev.disconnect(true);
+  });
+});
+
+describe('dynamic plate/probe rules', () => {
+  const at = (plate: number, probe: number | undefined, sp = 120, heater = true): DeviceSnapshot => ({
+    values: { plate, probe }, gross: {}, setpoints: { temp: sp }, switches: { heater, stirrer: false },
+  });
+  const runSnap = (f: (t: number) => DeviceSnapshot, seconds: number, set = defaults) => {
+    const mem = {};
+    for (let t = 0; t <= seconds; t++) {
+      const r = il.check(f(t), set, mem, t * 1000);
+      if (r) return { t, r, mem };
+    }
+    return { t: -1, r: undefined, mem };
+  };
+
+  it('probe pulled out mid-run (falls fast, setpoint unchanged) trips within seconds', () => {
+    // Holding 120 °C with the plate at 135; at t=300 the probe is lifted into air and cools 0.5 °C/s.
+    const hit = runSnap((t) => at(135, t < 300 ? 120 : Math.max(25, 120 - (t - 300) * 0.5)), 600);
+    expect(hit.r).toMatch(/Probe fell 10 °C/);
+    expect(hit.t).toBeLessThan(330);
+  });
+
+  it('lowering the setpoint does not count as a probe drop', () => {
+    const hit = runSnap((t) => at(Math.max(60, 135 - t * 0.2), Math.max(55, 120 - t * 0.2), t < 10 ? 120 : 50, true), 600, { ...defaults, gapGrowth: 0 });
+    expect(hit.r).toBeUndefined();
+  });
+
+  it('probe reading lost while heating trips after 10 s; never seen (plate-only use) does not', () => {
+    const lost = runSnap((t) => at(100, t < 60 ? 80 : undefined), 200);
+    expect(lost.r).toMatch(/Probe reading lost/);
+    expect(lost.t).toBe(70);
+    expect(runSnap(() => at(100, undefined), 200).r).toBeUndefined();
+    // Implausible values count as lost.
+    expect(runSnap((t) => at(100, t < 60 ? 80 : -273), 200).r).toMatch(/reads -273/);
+  });
+
+  it('learns the steady gap at setpoint and trips when it grows (boiling dry)', () => {
+    // Holds 120 °C with plate at 132 (gap 12). From t=600 the probe stalls and the plate climbs 0.1 °C/s.
+    const plate = (t: number) => (t < 600 ? 132 : Math.min(149, 132 + (t - 600) * 0.1));
+    const hit = runSnap((t) => at(plate(t), 120), 1500);
+    expect(hit.r).toMatch(/gap grew to .* held the setpoint at 12 °C/);
+    expect(il.describe!(at(132, 120), defaults, hit.mem)).toMatch(/steady gap 12 °C/);
+  });
+
+  it('a probe hanging in warm air (slow rise) fails the gap-scaled response check', () => {
+    // Plate climbs to 250 °C; the probe creeps up 0.3 °C/min. Old fixed 1 °C/5 min check would pass.
+    const hit = runSnap((t) => at(Math.min(240, 22 + t * 0.25), 40 + (t / 60) * 0.3, 200), 1800, { ...defaults, plateMax: 340, plateAbove: 200 });
+    expect(hit.r).toMatch(/Probe rose only/);
+  });
+});
+
+describe('HOT state and solvent list', () => {
+  it('shows HOT while the plate is ≥ 50 °C, MAY BE HOT after a disconnect, nothing when cool', async () => {
+    const dev = new DeviceInstance('hp', retControlVisc, 'Hotplate', '#000', retControlVisc.simulate(), 100);
+    await dev.connect();
+    await dev.raw('SIM_PIN 2 30');
+    await wait(300);
+    expect(dev.hotState).toBeUndefined();
+    await dev.raw('SIM_PIN 2 120');
+    await wait(300);
+    expect(dev.hotState?.state).toBe('hot');
+    await dev.disconnect(false);
+    expect(dev.hotState?.state).toBe('maybe');
+    expect(dev.hotState?.v).toBe(120);
+  });
+
+  it('flags solvents the plate may reach with the current settings', async () => {
+    const { solventCaution } = await import('../devices/solvents');
+    const s: DeviceSnapshot = { values: { plate: 40 }, gross: {}, setpoints: { temp: 150 }, switches: {} };
+    const ref = solventCaution.reference(s, () => defaults);
+    expect(ref.value).toBe(180); // setpoint 150 + 30
+    const flagged = solventCaution.items.filter((i) => i.value <= ref.value).map((i) => i.name);
+    expect(flagged).toEqual(['Carbon disulfide', 'Diethyl ether', 'Acetaldehyde', '1,4-Dioxane']);
   });
 });

@@ -103,7 +103,7 @@ export interface InterlockSpec {
    */
   check(s: DeviceSnapshot, settings: Record<string, number>, mem: Record<string, unknown>, now: number): string | undefined;
   /** One line for the card describing what is enforced right now, e.g. "Plate cut-off 100 °C". */
-  describe?(s: DeviceSnapshot, settings: Record<string, number>): string;
+  describe?(s: DeviceSnapshot, settings: Record<string, number>, mem?: Record<string, unknown>): string;
 }
 
 /** How a setpoint is being followed right now (see DeviceInstance.tracking). */
@@ -113,6 +113,22 @@ export interface Tracking {
   intended?: number;  // the value last applied from this page
   actual?: number;
   text: string;
+}
+
+/**
+ * A reference list shown under a caution icon on the card (e.g. solvent autoignition temperatures).
+ * Items at or below reference() are flagged red, within nearBy above it amber.
+ */
+export interface CautionList {
+  title: string;
+  unit: string;
+  intro: string;
+  sources: string;
+  items: { name: string; value: number; note?: string }[];
+  nearBy: number;
+  reference(s: DeviceSnapshot, interlockValues: (key: string) => Record<string, number>): { value: number; label: string };
+  /** Offer a button per item to set an interlock setting to (item value - margin), rounded down to 5. */
+  cap?: { interlock: string; setting: string; margin: number; label(v: number): string };
 }
 
 export type DeviceStatus = 'Interlock' | 'Idle' | 'Heating' | 'At temp' | 'Stirring' | 'Pumping' | 'No reply' | 'Disconnected' | 'Connecting';
@@ -136,6 +152,10 @@ export interface DeviceDriver {
   setpoints: SetpointSpec[];
   switches: SwitchSpec[];
   stopCommands: string[];        // what Stop all sends
+  /** Show HOT on the card while this reading is at or above `above`, and "may be hot" after a disconnect. */
+  hot?: { key: string; above: number };
+  /** Reference lists under a caution icon on the card. */
+  cautions?: CautionList[];
   /** Software interlocks (see InterlockSpec). */
   interlocks?: InterlockSpec[];
   releaseCommand?: string;       // sent when the device is removed (hand back to local control)

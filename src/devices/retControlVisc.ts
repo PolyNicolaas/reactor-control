@@ -1,6 +1,7 @@
 import { NAMUR_SERIAL, type DeviceDriver } from '../core/types';
 import { SimTransport } from './simulator';
 import { plateProbeInterlock } from './retInterlock';
+import { solventCaution } from './solvents';
 
 // IKA RET control-visc — hotplate stirrer (0–340 °C plate, external PT100 probe).
 // Source: operating instructions 20000004159, p. 31–33 (see docs/manuals/ret-control-visc/notes.md).
@@ -54,6 +55,9 @@ export const retControlVisc: DeviceDriver = {
   // Plate/probe interlock: stops the plate running away when the probe is not in the medium.
   // Software only; the unit's own safety circuit (IN_PV_3, set on the unit) is the hardware backstop.
   interlocks: [plateProbeInterlock],
+  // The plate stays hot long after the heater is off: HOT on the card from 50 °C, during and after a run.
+  hot: { key: 'plate', above: 50 },
+  cautions: [solventCaution],
   releaseCommand: 'RESET',
   // Documented in the manual (p. 31); not used by the app until tried on the bench.
   watchdog: { verified: false, arm: (s) => `OUT_WD1@${s}` },
