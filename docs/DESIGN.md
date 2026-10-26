@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (VNC without a password, D40; station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-26 (shared admin account on every station, D41; VNC without a password, D40; station names from mythical smiths and forges, D38; station setup script, D39; hotplate safety §15: dynamic interlock rules, HOT state, solvent autoignition list; set-vs-actual line on every setpoint).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [program-format.md](program-format.md) (draft program format) · [manuals/](manuals/README.md) (device notes)
 
@@ -144,6 +144,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D38 | 2026-10-26 | **Stations are named after mythical smiths and forges**, not numbers (list and rules in §12 "Station names"). The name is the Pi's hostname, the VNC address (`hephaestus.local`) and the station name in every record. Supersedes the `RC-03` example | Easier to remember and say aloud than `reactor-01` ("it's on Brokkr"), and fits equipment that heats and stirs |
 | D39 | 2026-10-26 | **One setup script per station** (`scripts/setup-station.sh`): on a fresh Raspberry Pi OS (desktop, 64-bit) it sets the station name, optional Wi-Fi (including enterprise/eduroam), desktop autologin, VNC, no screen blanking, `dialout`, a forced display for headless VNC, and a Chromium window that opens the app with `?station=<name>` once the network is up and reopens if closed. After the first working station, clone its SD card and only change the name | Stations are ephemeral and interchangeable (D23); a new or replaced Pi should be one command away from ready |
 | D40 | 2026-10-26 | **VNC needs no password for now.** The setup script turns off wayvnc authentication (`enable_auth=false`); the Pi desktop already logs in by itself, so a user goes straight from `<station>.local` to the app. `VNC_AUTH=on` keeps the Pi user's login. Supersedes "a password per Pi" in §12 | Nobody has to know or share a login while stations are being set up. Accepted risks, to deal with later: anyone who can reach a Pi on the network can control its units, including heaters; the connection is unencrypted; the record cannot say who was connected; some VNC viewers warn or refuse. Options to revisit: restrict VNC to the lab subnet (firewall or a lab network from IT), a shared password saved in each viewer, or the server dashboard with NU login (§12) |
+| D41 | 2026-10-26 | **Every station has the same admin account, user `admin`**, set in Raspberry Pi Imager when the card is flashed. It is used for SSH, `sudo` and the setup script, not by people running reactions (the desktop logs in by itself, VNC has no password, D40). **The password is never written in this repository** (it is public); the lab keeps it | One login to remember for whoever maintains the stations. A password in a public repo would let anyone who reaches a Pi on the network log in over SSH with full control |
 
 ## 6. Programs (draft)
 
@@ -324,7 +325,7 @@ Each station Pi is named after a smith, a forge or a forged thing from myth. Fam
 
 Rules: lowercase, no spaces or accents (hostnames, typed as `<name>.local` in VNC); each name is used once and never reused for a different Pi while old records still point to it; a label with the name goes on the Pi case. Avoid `wayland` (the Germanic smith) because it is also the Pi's display system and confuses troubleshooting.
 
-Setup: `STATION_NAME=hephaestus bash scripts/setup-station.sh` (D39).
+Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station name as hostname and user `admin` (D41; password kept by the lab, not in this repo), then `STATION_NAME=hephaestus bash scripts/setup-station.sh` (D39).
 
 ### To define
 
