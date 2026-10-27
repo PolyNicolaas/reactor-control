@@ -201,15 +201,40 @@ tighten the page's safety settings, never loosen them (same principle as the rul
 - Use the EUROSTAR's own torque limit (`OUT_SP_5`) as a unit-side backstop for the app's torque rule?
 - Which loops must survive a Pi failure, and can they (unit-side features: RET ramps, pump Volume mode, torque limit)?
 
+## Editor and run decisions (2026-10-27)
+
+Prototype: board **D** ("Curves with a step table") on the *Method editor concepts* canvas — C's
+curves on top of a B-style step table. **The table is the method; the curves are drawn from it**, and
+editing either updates the other. Chosen over A (lanes), B (steps) and C (profiles) on 2026-10-26.
+Each decision below was made after weighing the options and is implemented and tested in D
+(DESIGN D50–D54).
+
+**Shape of a method.** A list of steps. In each step every function (Heating, Stirring, Ch 1 …) is
+*Keep as before*, *Set to*, *Ramp to*, *Off*, or for pump channels *Dose*. Each step says when to go on:
+*the time is up*, *the probe reaches*, *a person confirms*, or *the dose is done*. A step's time counts from
+the end of the step before it. In edit and run, the same step strip, curves and colours: the plan is
+solid while editing, dashed while running with the measured values drawn solid over it.
+
+| # | Question | Decision | Why / consequence |
+| --- | --- | --- | --- |
+| 1 | What does **Hold** do? | **Freeze the step's clock and pause dosing.** Heating and stirring keep their current values; ramps freeze where they are; a waiting step does not move on while held; Resume continues. The chart shades the hold and the step stretches. | Planned volumes stay exact and a held run is safe to walk away from. Switching heating or stirring off would change the chemistry: that is Stop. |
+| 2 | How long does a **change by hand** last? | **Until the method next speaks about that function**: through *Keep* steps, ending at the first later step that sets, ramps, turns off or doses it (or when a dose completes). The plan redraws to include it, the table marks it "by hand", **Back to method** cancels it, and its start and end are recorded. A change during a ramp stops the ramp at the new value. | Matches "I've taken over the heat until the method says something about heat again". A faster pump in one dose does not leak into later doses; nothing is silently undone. Supersedes the "holds until the lane's next set/ramp; Keep makes it sticky" proposal in *Running with people in the loop*. |
+| 3 | How is "**do X at a set time**" written? | **Every change is a step boundary.** A step is a stretch where nothing changes except ramps; every corner in a curve is a step boundary. **Split** (shift-click or right-click a step in the strip, or the row's Split button) cuts a step at that point: the first part keeps the step's changes and becomes timed, the second keeps everything and inherits the step's wait; a ramp is cut so the curve is unchanged. **Merge ↓** undoes it, and is refused when the next step changes something (that change would move earlier). | One clock, one rule, a flat table that always lines up with the chart. Absolute-time events were rejected: they fire whatever the reaction's state (before the substrate is in, during a hold). Repeated actions ("sample every 30 min") need a repeat feature later. A scheduled start is a separate feature. |
+| 4 | How is a **volume** dosed? | **Dose X mL at Y mL/min**, a pump-channel mode; the step goes on when the volume is in, and its time is ≈ volume ÷ rate. Hand rate changes, holds and safety pauses change only how long it takes; the last bit is metered so the volume is exact. *Set to* stays for open-ended pumping. **Next (after a bench test):** the Reglo counts the volume itself (Volume mode), so it stops on its own if the Pi fails; the table and chart do not change. | The method's volume is what goes in. Today's count is the app's (rate × time while pumping), as good as the channel's calibration. The volume-limit safety rule stays as the backstop. |
+| 5 | How does the **time axis** behave? | **Planned length + 25 %, to a clean 10 min**, the same in edit and at Start; during a run it grows only when now or the shifted plan passes the right edge, and then by another 25 %. | Edit and run line up, and the chart rarely rescales (a 30-min hold in a 65-min method rescaled once, 90 → 120 min). Long methods will later want a zoom on top. |
+
+Also from testing D (2026-10-26/27): setpoint changes, step lengths, ramps, prompts with a recorded value,
+reorder/insert/delete, dot and edge dragging and double-click setting all round-trip between table and
+curves; the "Pause simulation" button belongs to the prototype only.
+
 ## Running with people in the loop
 
 The run view shows the lanes on the shared time axis (as the live chart does): past as recorded, future as planned, a "now" line. The device cards stay usable during a run. What a person can do, and how the engine treats it:
 
 | Action | Effect | Recorded as |
 | --- | --- | --- |
-| Change a setpoint on a card | **Override**: holds until the lane's next `set`/`ramp`, which the run view flags ("next step will change 450 → 400 rpm — keep 450?") | override, old/new value |
-| Keep an override | The value replaces that parameter in the rest of the lane (e.g. "keep 450 rpm for the rest of the run") | override (sticky) |
-| Pause a lane / pause all | Timers stop, setpoints stay, pumps stop (pump channels pause by stopping) | pause / resume |
+| Change a setpoint on a card | **Override** until the method next sets, ramps, turns off or doses that function (decision 2, 2026-10-27); Back to method cancels it | override, old/new value, and when it ended |
+| Hold | The step's clock stops, heating and stirring stay, dosing pauses (decision 1, 2026-10-27) | hold / resume, with its length |
 | Extend / shorten the current hold | Moves the rest of the lane | edit step |
 | Skip step / jump to step | Ends the current step now | skip |
 | Release gate now | Treats an `until` as reached | gate forced |
@@ -273,7 +298,7 @@ See the roadmap in [DESIGN.md §10](DESIGN.md#10-roadmap): the reaction record a
 
 ## Open questions
 
-- Should overrides default to "this step only" or "rest of run"? (Proposal: this step, with a one-click "keep".)
+- ~~Should overrides default to "this step only" or "rest of run"?~~ Decided 2026-10-27: until the method next sets that function (see *Editor and run decisions*).
 - Who confirms prompts — anyone at the page, or should runs record a person (needs login)?
 - Pump direction: should methods be able to set it, or is it a setup fact checked like tubing?
 - Should a method be able to require a specific calibration (e.g. pump channel calibrated within 30 days)?
