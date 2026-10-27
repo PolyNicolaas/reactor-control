@@ -1,10 +1,10 @@
 # Reaction methods — design proposal
 
-Status: **draft for discussion** (last reviewed 2026-10-22). Nothing here is built yet. Decisions, priorities and the build order live in [DESIGN.md](DESIGN.md): the record of what happened comes first and methods are optional (D10); every reaction runs under a reaction ID on a station (D14, D23). Example: [`examples/methods/dropwise-addition.reactor.json`](../examples/methods/dropwise-addition.reactor.json).
+Status: **design decided, not built** (last reviewed 2026-10-27). The editor and run behaviour were chosen and tested in a prototype (board D on the *Method editor concepts* canvas; DESIGN D50–D55); the file format below follows it (format 0.2, step-based). Nothing is built into the app yet. Decisions, priorities and the build order live in [DESIGN.md](DESIGN.md): the record of what happened comes first and methods are optional (D10); every reaction runs under a reaction ID on a station (D14, D23). Example: [`examples/methods/dropwise-addition.reactor.json`](../examples/methods/dropwise-addition.reactor.json) (0.2); the earlier lane-based draft is kept as [`dropwise-addition.v0.1-lanes.reactor.json`](../examples/methods/dropwise-addition.v0.1-lanes.reactor.json) for reference.
 
 ## Goals
 
-1. A method says **what the reaction needs** (equipment by capability, not by model) and **what to do over time**, one lane per piece of equipment.
+1. A method says **what the reaction needs** (equipment by capability, not by model) and **what to do over time**, as a list of steps; in each step every role keeps, sets, ramps, turns off or doses, and the step says when to go on.
 2. **People run methods and adjust them on the fly.** Every adjustment is allowed (within limits), shown, and recorded.
 3. **Manual work is a method too.** Everything done on the control page is captured and can be saved as a method, re-imported and run again.
 4. **Equipment is modular and substitutable.** Before a run, the app checks that the page has what the method needs and suggests which unit fills which role. A EUROSTAR 100 can stand in for a EUROSTAR 60 when the method's ranges allow it.
@@ -42,9 +42,13 @@ JSON, extension `.reactor.json`, versioned by `"format"`. JSON because the brows
 | `name`, `description`, `author`, `created` | Shown in the run header and stored with the run |
 | `equipment` | Named **roles** (`heater`, `stirrer`, `reagentA`) and what each role needs |
 | `limits` | Hard caps for this method, on top of the device and page limits |
-| `lanes` | One step list per role, run in parallel |
-| `prompts` | Human actions the method waits for (add solid, take a sample, check colour) |
+| `steps` | The method, in order: what each role does in the step and when to go on (below) |
 | `onAbort` | What Stop/abort does per role (e.g. stop the pump, turn the heater off, keep stirring) |
+
+**Format 0.2 (2026-10-27) replaces the 0.1 draft's `lanes` and `prompts`** (one step list per role, joined by
+gates): the editor chosen in testing is a table of steps under the curves (D50), and every change is a
+step boundary (D53), so one step list says everything and reads like the table. Prompts are now a kind of
+"go on when".
 
 ### Equipment: roles, capabilities, fuzzy matching
 
@@ -59,7 +63,7 @@ A method never says "port 3" or "eurostar60-1". It names roles and describes the
 ```
 
 - `kind` is a family every driver declares (`overhead-stirrer`, `hotplate`, `pump-channel`, later `thermostat`, `balance`, `pH`…).
-- `needs` lists the setpoints and readings the lanes use, with the range actually required. A EUROSTAR 100 matches if its speed range covers 200–600 rpm.
+- `needs` lists the setpoints and readings the steps use, with the range actually required. A EUROSTAR 100 matches if its speed range covers 200–600 rpm.
 - `prefer` orders candidates when several units qualify; it is a hint, not a requirement.
 - `check` holds things the app can read but the method cannot set (tubing ID on a pump channel). A mismatch is a warning the person acknowledges.
 - A pump **channel** is a role, so one 4-channel pump can fill `reagentA`, `reagentB` and `quench`.
@@ -92,9 +96,9 @@ unit**, which is what the card already shows:
 
 So a method's `heater.temp` resolves to *Hotplate › Heating › Temperature*, `stirrer.on` to *Stirrer ›
 Stirring › Motor*, `reagentA.flow` to *Pump › Ch 1 › Flow*. Function keys are stable (`heating`, `stirring`,
-`ch1`) and are what a run record stores next to the unit. While a method runs, the role's lane will show
+`ch1`) and are what a run record stores next to the unit. While a method runs, the role's column and curve will show
 in that function's section (current step, next step, gate, Hold), next to the controls a person uses to
-adjust it, and the function's **safety rules stay in force**: a safety stop holds that lane and asks the
+adjust it, and the function's **safety rules stay in force**: a safety stop holds the run at that step and asks the
 person, like any other override.
 
 Still to do for matching: capabilities are declared per module today (`provides`: `stirrer`,
@@ -103,26 +107,36 @@ RET's Heating is a `hotplate`, its Stirring a `magnetic-stirrer`, each pump chan
 
 ### Steps
 
-Each lane is a list of steps, run in order. Proposed step types:
+A step is one row of the editor's table: a stretch of time where nothing changes except ramps.
 
-| Step | Meaning | Example |
+```json
+{ "name": "Dose reagent A", "do": { "reagentA": { "dose": "10 mL", "rate": "0.5 mL/min" } }, "goOnWhen": "dose" }
+```
+
+**`do`: what each role does.** A role not named keeps what it was doing.
+
+| Value | Meaning | Card / table |
 | --- | --- | --- |
-| `set` | Change setpoints/switches now | `{ "do": "set", "temp": 60, "on": true }` |
-| `ramp` | Move a setpoint linearly over a time, or at a rate | `{ "do": "ramp", "speed": 400, "over": "5 min" }`, `{ "do": "ramp", "temp": 80, "rate": "2 °C/min" }` |
-| `hold` | Keep current values for a time or until an event | `{ "do": "hold", "for": "30 min" }` |
-| `until` | Wait for a reading condition (a **gate**), with a timeout | `{ "do": "until", "reading": "probe", "op": ">=", "value": 58, "timeout": "45 min" }` |
-| `wait` | Wait for another lane or a prompt | `{ "do": "wait", "for": "until:charged" }` |
-| `dose` | Pump a volume at a rate (pump-channel roles) | `{ "do": "dose", "volume": 10, "rate": 0.5 }` |
-| `mark` | Put a named event on the timeline | `{ "do": "mark", "id": "sample-1" }` |
-| `control` *(proposed)* | Hold a reading at a target by adjusting a setpoint (closed loop) | `{ "do": "control", "hold": "torque", "target": 25, "by": "speed", "min": 100, "max": 600, "for": "2 h" }` |
+| *(absent)* or `"keep"` | Keep as before | **Keep** |
+| `{ "set": 60 }` | Set the value and switch the function on | **Set** |
+| `{ "ramp": 400, "from": 200 }` | Ramp linearly over the step to the value (`from` optional: else from the current value) | **Ramp** |
+| `"off"` | Switch the function off | **Off** |
+| `{ "dose": "10 mL", "rate": "0.5 mL/min" }` | Pump channels: dose exactly this volume at this rate; the pump stops when it is in | **Dose** |
 
-Steps can carry an `id`; other lanes and prompts refer to `lane.id` (`heater.hot`, `reagentA.done`). Durations are strings with units (`"90 s"`, `"5 min"`, `"1.5 h"`) so files stay readable.
+**`goOnWhen`: when the step ends.** One per step.
 
-Gates are what make methods robust to real chemistry: "dose when the probe reaches 58 °C" rather than "dose at minute 12". Every gate has a timeout and a timeout action (`prompt`, `skip`, `abort`).
+| Value | Meaning | Chip |
+| --- | --- | --- |
+| `{ "time": "5 min" }` | After this long (the step's own clock: it stops during a hold) | **Time** |
+| `{ "reading": "heater.probe", "atLeast": 58 }` (or `atMost`) | When a reading gets there; the step's `estimate` is used for planning | **Probe** |
+| `{ "person": "Add 5.0 g substrate…", "record": ["mass added (g)"] }` | When a person confirms; recorded values go into the run record | **Person** |
+| `"dose"` | When the step's dose is in; its time is ≈ volume ÷ rate | **Dose** |
 
-### Prompts
-
-Prompts are steps for people. The run waits (only the lanes that depend on it) until someone confirms. A prompt can ask for values (`"record": ["mass added (g)"]`) that go into the run record as data, next to the instrument data.
+Waiting steps (reading, person) may add `"timeout": "45 min"` with `"onTimeout": "ask" | "goOn" | "abort"`
+(default `ask`). Durations are strings with units (`"90 s"`, `"5 min"`, `"1.5 h"`). A "do X at a set time"
+is written by splitting a step at that point (D53). Planned additions, documented but not decided
+(D49): ramp by rate (`{ "ramp": 80, "rate": "2 °C/min" }`), closed-loop control, more gates — see
+*Control variables* below.
 
 ## Control variables (to decide, 2026-10-26)
 
@@ -203,7 +217,7 @@ tighten the page's safety settings, never loosen them (same principle as the rul
 
 ## Editor and run decisions (2026-10-27)
 
-Prototype: board **D** ("Curves with a step table") on the *Method editor concepts* canvas — C's
+Prototype: board **D** (restyled 2026-10-27 to match the device cards: Keep / Set / Ramp / Off / Dose and Time / Probe / Person / Dose are chip rows, the chosen chip filled in the function's colour, waits in purple; row tools appear on the selected step only) ("Curves with a step table") on the *Method editor concepts* canvas — C's
 curves on top of a B-style step table. **The table is the method; the curves are drawn from it**, and
 editing either updates the other. Chosen over A (lanes), B (steps) and C (profiles) on 2026-10-26.
 Each decision below was made after weighing the options and is implemented and tested in D
@@ -229,16 +243,16 @@ curves; the "Pause simulation" button belongs to the prototype only.
 
 ## Running with people in the loop
 
-The run view shows the lanes on the shared time axis (as the live chart does): past as recorded, future as planned, a "now" line. The device cards stay usable during a run. What a person can do, and how the engine treats it:
+The run view is the editor's own picture (D50): the step strip and curves on one time axis, the plan dashed with the measured values drawn solid over it, a "now" line, and the step table with the current step highlighted. The device cards stay usable during a run. What a person can do, and how the engine treats it:
 
 | Action | Effect | Recorded as |
 | --- | --- | --- |
 | Change a setpoint on a card | **Override** until the method next sets, ramps, turns off or doses that function (decision 2, 2026-10-27); Back to method cancels it | override, old/new value, and when it ended |
 | Hold | The step's clock stops, heating and stirring stay, dosing pauses (decision 1, 2026-10-27) | hold / resume, with its length |
-| Extend / shorten the current hold | Moves the rest of the lane | edit step |
+| Extend / shorten the current step | Moves the rest of the method | edit step |
 | Skip step / jump to step | Ends the current step now | skip |
 | Release gate now | Treats an `until` as reached | gate forced |
-| Take a role manual | The lane detaches; the method waits at that lane's next step until "hand back" | manual / resume |
+| Take a function by hand | A change by hand; the method takes it back where it next speaks about that function, or on Back to method | override |
 | Edit the rest of the method | Insert, delete or change future steps in a side panel | method edit (diff) |
 | Stop all | Runs `onAbort`, ends the run | abort |
 
@@ -247,7 +261,7 @@ Rules that keep this safe and predictable:
 - Method `limits`, page limits and device ranges all apply to overrides too.
 - The engine never silently undoes a person's change: anything that would overwrite an override is announced first.
 - The run never continues past a prompt or gate on its own unless a timeout action says so.
-- If a unit disconnects, its lane pauses and the run shows it; other lanes continue only if they do not `wait` on it.
+- If a unit disconnects, the run holds and shows it (to decide in detail with the run engine).
 
 ## Manual sessions → methods
 
@@ -256,8 +270,8 @@ Every reaction is recorded from the moment its reaction ID is entered, whether o
 **Save as method** produces a `.reactor.json` with:
 
 - `equipment` built from the units used, generalized to capabilities: a stirrer used at 200–450 rpm becomes `"kind": "overhead-stirrer", "speed": { "min": "<=200", "max": ">=450" }`, with the actual model as `prefer`. So a manual session on a EUROSTAR 60 replays on a EUROSTAR 100.
-- `lanes` with one `set` per change at its time offset (`hold` between them). Notes become `mark` steps; terminal commands are listed as comments, not replayed.
-- An optional **tidy** pass, offered as checkboxes: merge setpoint changes made in quick steps into a `ramp`; replace "waited until the probe read 60 °C" with an `until` gate (the app can suggest it when a change follows a reading crossing a round value); turn notes like "added substrate" into `prompt`s.
+- `steps`: every change starts a new step (D53) with `goOnWhen.time` = the time until the next change. Notes become step names; terminal commands are listed as comments, not replayed.
+- An optional **tidy** pass, offered as checkboxes: merge setpoint changes made in quick steps into a `ramp`; replace "waited until the probe read 60 °C" with a reading `goOnWhen` (the app can suggest it when a change follows a reading crossing a round value); turn notes like "added substrate" into person `goOnWhen`s.
 
 **Save run as method** does the same for a method run, keeping the original steps and folding in the overrides that were kept. Each saved method records where it came from (`"derivedFrom": { "run": "...", "method": "..." }`), so a family of edited versions can be traced.
 
@@ -275,19 +289,21 @@ Every reaction is recorded from the moment its reaction ID is entered, whether o
 Notebook sketch:
 
 ```python
-from reactor_method import Method, minutes
+from reactor_method import Method
 
-p = Method("Dropwise addition at 60 °C")
-heater  = p.role("heater",   kind="hotplate",         needs={"temp": (None, 80)})
-stirrer = p.role("stirrer",  kind="overhead-stirrer", needs={"speed": (200, 600)}, prefer=["eurostar60", "eurostar100"])
-reagent = p.role("reagentA", kind="pump-channel",     needs={"flow": (None, 1)}, check={"tubing": 1.02})
+m = Method("Dropwise addition at 60 °C")
+m.role("heater",   kind="hotplate",         needs={"temp": (None, 80)})
+m.role("stirrer",  kind="overhead-stirrer", needs={"speed": (200, 600)}, prefer=["eurostar60", "eurostar100"])
+m.role("reagentA", kind="pump-channel",     needs={"flow": (None, 1)}, check={"tubing": 1.02})
 
-heater.set(temp=60, on=True).until("probe", ">=", 58, timeout=minutes(45), id="hot")
-stirrer.set(speed=200, on=True).ramp(speed=400, over=minutes(5))
-charged = p.prompt("Add 5.0 g substrate, then confirm.", after=heater["hot"], record=["mass added (g)"])
-reagent.wait(charged).dose(volume=10, rate=0.5, id="done")
+m.step("Heat and stir up", heater=60, stirrer=m.ramp(400, start=200), go_on=m.time("5 min"))
+m.step("Reach temperature", go_on=m.reading("heater.probe", at_least=58), estimate="7 min")
+m.step("Add the substrate", go_on=m.person("Add 5.0 g substrate", record=["mass added (g)"]))
+m.step("Dose reagent A", reagentA=m.dose("10 mL", rate="0.5 mL/min"))
+m.step("Let it react", reagentA="off", go_on=m.time("30 min"))
+m.step("Switch off", heater="off", stirrer="off", go_on=m.time("1 min"))
 
-p.save("dropwise.reactor.json")
+m.save("dropwise.reactor.json")
 ```
 
 Run records export the other way (JSON + the existing CSV), so a notebook can load a run, compare it with the plan, tweak and save a new method.

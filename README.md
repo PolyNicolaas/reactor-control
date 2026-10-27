@@ -18,10 +18,10 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 | Document | What it is |
 | --- | --- |
 | [docs/DESIGN.md](docs/DESIGN.md) | **Start here.** How the app is used, what is recorded and saved, decisions, roadmap, ideas, open questions. A living document: updated with every code change |
-| [docs/method-format.md](docs/method-format.md) | Draft format for reaction methods (roles, steps, live adjustments) |
+| [docs/method-format.md](docs/method-format.md) | Reaction methods: editor and run decisions, file format 0.2 (roles, steps), control variables to consider |
 | [docs/MODULES.md](docs/MODULES.md) | Supported and planned devices (generated from `docs/modules.json`) |
 | [docs/manuals/](docs/manuals/README.md) | One folder per device: manual (downloaded, not committed) and annotated `notes.md` |
-| [examples/methods/](examples/methods/) | Example method file |
+| [examples/methods/](examples/methods/) | Example method file (format 0.2; the 0.1 lane draft kept for reference) |
 | [CLAUDE.md](CLAUDE.md) | Rules for changing the code (keep the design doc current) |
 
 ## What works now

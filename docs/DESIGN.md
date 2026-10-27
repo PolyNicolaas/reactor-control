@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-27 (streamlined device cards with real on/off switches; method decisions D50–D54).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-27 (method format 0.2 step-based; editor D restyled; status and next steps in §10).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (draft method format) · [manuals/](manuals/README.md) (device notes)
 
@@ -162,14 +162,16 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D53 | 2026-10-27 | **Every change is a step boundary**; timed events are written by splitting steps (Split / Merge ↓). No absolute-time events | One clock that follows the reaction's state; absolute times fire whatever the reaction is doing |
 | D54 | 2026-10-27 | **Dose X mL at Y mL/min**: the step goes on when the volume is in (app's count now; the pump's own Volume mode after a bench test). **Time axis** = planned length + 25 %, growing by 25 % only when passed | Exact volumes whatever interrupts the dose; edit and run views line up and rarely rescale |
 | D55 | 2026-10-27 | **Streamlined device cards**: cards are narrow columns side by side (≥ 340 px each); functions stack inside a card as compact blocks with a divider; values are one row of numbers with small labels (no tiles); each setpoint is one line (label · value · unit · **Set**) with set-vs-actual under it; on/off functions are **switches** that show ON (green track, green-tinted, the section gets a green edge) or OFF (grey) — locked ones get a red dashed border; safety rule toggles show ON/OFF in the track. Supersedes the wide card layout of D47 (the grouping by function stays) | User feedback: cards too wide and roomy, on/off state hard to see |
+| D56 | 2026-10-27 | **Method file format 0.2 is step-based** (`steps` with `do` per role and one `goOnWhen`), replacing the 0.1 draft's per-role `lanes` joined by gates and separate `prompts`. Example in `examples/methods/`; the 0.1 example is kept for reference | Follows the chosen editor (D50) and "every change is a step boundary" (D53): the file reads like the table, one list instead of parallel lanes |
 
-## 6. Methods (draft)
+## 6. Methods (designed, not built)
 
-Full draft: [method-format.md](method-format.md). Summary:
+Full design: [method-format.md](method-format.md). Summary:
 
-- JSON file (`.reactor.json`) with roles, limits, one step lane per role (set, ramp, hold, until-reading gate, wait, dose), prompts for human actions, and abort behaviour.
-- During a run, the device cards stay live: a change is an override of that step, with "keep for the rest of the run"; pause, hold, skip, extend, take a role manual and hand it back.
-- **Reworked by D10:** the record is primary. The run view shows the past (actuals) and the future (plan) on the same chart; editing the plan by dragging points is the CombiFlash-style goal. Build order now starts with the record and package, not the run engine.
+- **Editor (D50):** curves on top of a step table; the table is the method, the curves are drawn from it, and both edit it. Prototype: board D on the *Method editor concepts* canvas (tested in a browser, restyled to match the cards, D55).
+- **File (format 0.2, D56):** `.reactor.json` with roles (by capability), limits, and `steps`: in each step every role keeps, sets, ramps, turns off or doses, and the step goes on after a time, at a reading, when a person confirms, or when its dose is in. Replaces the 0.1 lane-based draft.
+- **Running (D51–D54):** Hold freezes the step's clock and pauses dosing; a change by hand lasts until the method next speaks about that function; timed events are step splits; doses are exact volumes; the time axis is the plan + 25 %.
+- **D10 still holds:** the record is primary; build order starts with the record and package.
 
 ## 7. Reaction ID, Stop and the package
 
@@ -233,6 +235,8 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 - The Pi's ribbon-cable camera module is harder to use from a browser (it needs a bridge); USB cameras are the default.
 
 ## 10. Roadmap
+
+**Where we left off (2026-10-27):** the app has modules with live safety rules, cards grouped by function with on/off switches (D42–D47, D55). Methods are fully designed and prototyped (D50–D56) but not in the app. **Next:** build the method editor and run engine from board D into the app (item 5), after or alongside the reaction record (items 1–2).
 
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
 2. **Package and outbox**: as-run method from setpoints, outbox folder writer, zip fallback.

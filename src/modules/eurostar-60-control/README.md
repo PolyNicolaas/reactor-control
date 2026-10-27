@@ -23,7 +23,7 @@ it first** ([guide](../README.md)). Manual facts with pages: [`docs/manuals/euro
   while either rule is Active.
 - **Motor off, then on, does not restart until the speed is applied again** (user report 2026-10-26).
   The app does not resend the speed by itself; the card shows "Unit is set to 0 rpm, not the 400 rpm
-  you applied" and Apply flashes (DESIGN D33). The simulator models it as `STOP_4` clearing the set speed.
+  you applied" and the Set button flashes (DESIGN D33, D55). The simulator models it as `STOP_4` clearing the set speed.
 - **No watchdog command exists** on this model: if the Pi dies the motor keeps turning. Stop all and
   removing the unit from the page both send `STOP_4`.
 
