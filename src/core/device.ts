@@ -469,7 +469,7 @@ export class DeviceInstance {
   /**
    * Set value vs actual for one setpoint, as one line for the card. Tells the user plainly when the
    * function is on but the actual is not going to the set value, and when the unit's set value is not
-   * what was last applied here (the EUROSTAR can come back from Motor off with no speed until Apply).
+   * what was last applied here (the EUROSTAR can come back from Motor off with no speed until Set is pressed again).
    */
   tracking(key: string, now = Date.now()): Tracking {
     const sp = this.driver.setpoints.find((x) => x.key === key);
@@ -486,7 +486,7 @@ export class DeviceInstance {
       Math.abs(set - intended) > Math.max(sp.tolerance, (sp.toleranceRel ?? 0) * Math.abs(intended)) &&
       this.pending[key] === undefined;
     if (mismatch) {
-      return { ...base, state: 'mismatch', text: `Unit is set to ${f(set)} ${u}, not the ${f(intended)} ${u} you applied. Apply again to send it.` };
+      return { ...base, state: 'mismatch', text: `Unit is set to ${f(set)} ${u}, not the ${f(intended)} ${u} you applied. Press Set again to send it.` };
     }
     if (!on) return { ...base, state: 'off', text: `${swLabel} off · set ${f(set)} ${u} · actual ${f(actual, actual !== undefined && u === '°C' ? 1 : 0)} ${u}` };
     if (set === undefined || actual === undefined) return { ...base, state: 'unknown', text: `Set ${f(set)} ${u} · actual ${f(actual)} ${u}` };

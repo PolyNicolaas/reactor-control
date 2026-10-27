@@ -106,13 +106,16 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
       'div',
       { class: 'sp-row' },
       h('label', {}, sp.label),
-      h('div', { class: 'sp-input' }, input, h('span', { class: 'unit' }, sp.unit), (spApplyBtns[sp.key] = h('button', { onclick: apply }, 'Apply') as HTMLButtonElement)),
+      h('div', { class: 'sp-input' }, input, h('span', { class: 'unit' }, sp.unit), (spApplyBtns[sp.key] = h('button', { class: 'sp-apply', onclick: apply }, 'Set') as HTMLButtonElement)),
       read,
     );
   };
 
   const switchFor = (sw: (typeof d.switches)[number]) => {
-      const b = h('button', { class: 'switch', 'aria-pressed': 'false' }, sw.label) as HTMLButtonElement;
+      const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': 'false', 'aria-label': sw.label },
+        h('span', { class: 'switch-label' }, sw.label),
+        h('span', { class: 'switch-track', 'aria-hidden': 'true' }, h('span', { class: 'switch-state' }, 'OFF'), h('span', { class: 'switch-knob' })),
+      ) as HTMLButtonElement;
       b.addEventListener('click', async () => {
         const on = !dev.snapshot.switches[sw.key];
         if (on && sw.confirmOn && !confirm(sw.confirmOn)) return;
@@ -275,8 +278,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     }
     for (const sw of d.switches) {
       const on = dev.snapshot.switches[sw.key];
-      swEls[sw.key].setAttribute('aria-pressed', String(on));
-      swEls[sw.key].textContent = `${sw.label}: ${on ? 'ON' : 'OFF'}`;
+      swEls[sw.key].setAttribute('aria-checked', String(on));
+      swEls[sw.key].querySelector('.switch-state')!.textContent = on ? 'ON' : 'OFF';
       const lock = dev.lockedBy(sw.key);
       swEls[sw.key].classList.toggle('locked', !!lock);
       swEls[sw.key].title = lock ? `Locked out: ${lock}` : '';

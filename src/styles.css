@@ -489,3 +489,89 @@ p.hot-badge { display: inline-block; margin: 4px 0; }
 .device-panel > header { align-self: stretch; }
 .fn .watched { font-size: 13px; }
 .fn .watched h4 { font-size: 13px; margin-bottom: 2px; }
+
+/* ===================== Streamlined device cards (2026-10-27) =====================
+   Cards are narrow columns side by side; each function is a compact block inside its card:
+   header with a real on/off switch, one row of values, one line per setpoint, safety and
+   watched-by collapsed. Overrides the earlier, roomier card rules above. */
+.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; }
+.panels > .add-row, .panels > .panel.camera-panel { grid-column: 1 / -1; }
+.panel.device-panel { padding: 8px 10px 10px; gap: 6px; border-left-width: 5px; }
+.device-panel > header { gap: 6px; min-height: 40px; }
+.device-panel > header .handle { min-width: 24px; font-size: 16px; }
+.device-panel .dev-label { font-size: 16px; }
+.device-panel .dev-model { font-size: 12px; }
+.device-panel .status { padding: 2px 8px; font-size: 12px; }
+.device-panel .safety-chip { padding: 2px 8px; font-size: 12px; }
+.device-panel .menu summary { width: 36px; height: 36px; font-size: 18px; }
+
+.device-panel .fns { display: flex; flex-direction: column; gap: 0; }
+.device-panel .fn { border: none; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 2px; gap: 6px; box-shadow: none; }
+.device-panel .fn:first-child { border-top: none; padding-top: 2px; }
+.device-panel .fn.is-on { box-shadow: inset 3px 0 0 var(--good); padding-left: 8px; border-color: var(--line); }
+.device-panel .fn.is-tripped { box-shadow: inset 3px 0 0 var(--bad); padding-left: 8px; border-color: var(--line); }
+.device-panel .fn-head { min-height: 34px; gap: 6px; }
+.device-panel .fn-title { font-size: 14px; }
+
+/* values: one compact row, no tiles */
+.device-panel .fn .tiles { display: flex; flex-wrap: wrap; gap: 2px 16px; align-items: flex-end; }
+.device-panel .fn .tile { background: none; padding: 0; border-radius: 0; gap: 0; min-width: 0; }
+.device-panel .fn .tile.primary { grid-column: auto; }
+.device-panel .fn .tile-label { font-size: 11px; }
+.device-panel .fn .tile-value { font-size: 17px; line-height: 1.15; }
+.device-panel .fn .tile.primary .tile-value { font-size: 26px; }
+.device-panel .fn .tile-note { font-size: 11px; max-width: 220px; }
+.device-panel .fn .tile.tareable { grid-column: auto; }
+.device-panel .tile-tools { margin-top: 2px; gap: 4px; }
+.device-panel .tile-tools .tare { min-height: 30px; padding: 0 10px; font-size: 13px; }
+
+/* setpoints: label · input · unit · Set on one line, set-vs-actual underneath */
+.device-panel .fn .sp-row { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: center; }
+.device-panel .fn .sp-row label { font-size: 13px; color: var(--ink-2); font-weight: 600; min-width: 64px; }
+.device-panel .fn .sp-input { gap: 6px; }
+.device-panel .fn .sp-input input { min-height: 36px; width: 84px; max-width: none; flex: none; padding: 0 8px; }
+.device-panel .fn .sp-input .unit { font-size: 13px; color: var(--ink-2); min-width: 44px; }
+.device-panel .sp-apply { min-height: 36px; padding: 0 14px; font-weight: 600; }
+.device-panel .fn .sp-read { grid-column: 1 / -1; font-size: 12px; }
+
+/* on/off switch: impossible to misread */
+.switch { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-weight: 600; font-size: 14px; }
+.switch:hover:not(:disabled) { border-color: var(--ink-2); }
+.switch[aria-pressed='true'] { background: var(--card); color: inherit; }
+.switch-track { position: relative; display: inline-flex; align-items: center; width: 62px; height: 28px; border-radius: 999px; background: #8a93a3; transition: background .15s; }
+.switch-state { position: absolute; right: 9px; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #fff; }
+.switch-knob { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .15s; }
+.switch[aria-checked='true'] { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--card)); }
+.switch[aria-checked='true'] .switch-track { background: var(--good); }
+.switch[aria-checked='true'] .switch-state { right: auto; left: 10px; }
+.switch[aria-checked='true'] .switch-knob { transform: translateX(34px); }
+.switch.locked { outline: none; border: 2px dashed var(--bad); opacity: 1; }
+.switch.locked .switch-track { background: color-mix(in srgb, var(--bad) 55%, #8a93a3); }
+@media (prefers-reduced-motion: reduce) { .switch-track, .switch-knob { transition: none; } }
+
+/* safety, cautions, watched-by: one tidy line each until opened */
+.device-panel .fn .safety, .device-panel .fn .caution { padding: 4px 8px; border-radius: 8px; }
+.device-panel .fn .watched { border-top: none; padding-top: 0; }
+.device-panel .fn .watched h4 { font-size: 12px; color: var(--ink-2); }
+.device-panel .fn .watched-item { font-size: 12px; gap: 6px; }
+.device-panel .fn .rule > summary { padding: 3px 2px; }
+.device-panel .fn .rule-body { padding: 0 4px 6px; }
+.device-panel .fn .rule-why { font-size: 12px; margin: 0 0 4px; }
+.device-panel .fn .rule-facts { font-size: 12px; margin-bottom: 4px; }
+.device-panel .fn .rule-setting { font-size: 13px; gap: 0 8px; }
+.device-panel .fn .rule-input input { min-height: 32px; width: 72px; }
+.device-panel .fn .rule-setting .hint { font-size: 11px; }
+
+/* rule on/off toggles: larger, with ON/OFF in the track */
+.rule-toggle input { width: 46px; height: 24px; }
+.rule-toggle input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
+.rule-toggle input:checked::after { transform: translateX(22px); }
+.rule-toggle input::before { content: 'OFF'; position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 9px; font-weight: 800; color: #fff; }
+.rule-toggle input:checked::before { content: 'ON'; right: auto; left: 6px; }
+.rule-toggle input { background: #8a93a3; }
+.rule-toggle input:checked { background: var(--good); }
+.rule-toggle input:disabled { opacity: 1; background: color-mix(in srgb, var(--good) 60%, #8a93a3); }
+.device-panel .fn .rule > summary { grid-template-columns: auto minmax(0, 1fr) auto; }
+.device-panel .fn > .safety, .device-panel .fn > .caution { align-self: stretch; }
+.device-panel .fn .tiles .tile-label { white-space: nowrap; }
+.device-panel .fns { align-items: stretch; }
