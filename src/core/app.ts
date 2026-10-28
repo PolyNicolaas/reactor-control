@@ -44,13 +44,14 @@ export interface PageConfig {
   cameras?: SavedCamera[];
 }
 
-/** A camera file in a recording. The file itself is in IndexedDB (mediaStore) under `file`. */
+/** A camera file in a recording. The file itself is in IndexedDB (mediaStore) under `key`. */
 export interface MediaItem {
   t: number;
   end?: number;
   cameraId: string;
   kind: MediaOut['kind'];
   file: string;          // path inside the download, e.g. "clips/camera-1_+000690.0s.webm"
+  key: string;           // name in the media store: "<run start ms>/<file>", unique across recordings
   bytes: number;
   reason?: string;
 }
@@ -191,9 +192,14 @@ export class App {
     return this.devices.find((d) => d.connected && d.transport instanceof SerialTransport && d.transport.port === port);
   }
 
-  async stopAll(): Promise<void> {
-    await Promise.all(this.devices.filter((d) => d.connected).map((d) => d.stopAll()));
-    this.note('Stop all pressed');
+  /** Stops every connected unit. Returns the units where a stop command failed, and those not connected. */
+  async stopAll(): Promise<{ failed: string[]; offline: string[] }> {
+    const live = this.devices.filter((d) => d.connected);
+    const res = await Promise.all(live.map(async (d) => ({ d, f: await d.stopAll() })));
+    const failed = res.filter((r) => r.f.length).map((r) => `${r.d.label} (${r.f.join(', ')})`);
+    const offline = this.devices.filter((d) => !d.connected).map((d) => d.label);
+    this.note(`Stop all pressed${failed.length ? ` — FAILED on ${failed.join('; ')}` : ''}${offline.length ? ` — not connected: ${offline.join(', ')}` : ''}`);
+    return { failed, offline };
   }
 
   // ----- cameras -----
@@ -239,13 +245,14 @@ export class App {
     const secs = (m.t - run.startedAt) / 1000;
     const elapsed = `${secs < 0 ? '-' : '+'}${Math.abs(secs).toFixed(1).padStart(8, '0')}`;
     const file = `${folder}/${cam.id}_${elapsed}s.${m.ext}`;
+    const key = `${run.startedAt}/${file}`;
     try {
-      await mediaStore.put(file, m.blob);
+      await mediaStore.put(key, m.blob);
     } catch (e) {
       this.logged.emit({ t: Date.now(), deviceId: cam.id, kind: 'error', text: `Could not store ${file}: ${(e as Error).message}` });
       return;
     }
-    run.media.push({ t: m.t, end: m.end, cameraId: cam.id, kind: m.kind, file, bytes: m.blob.size, reason: m.reason });
+    run.media.push({ t: m.t, end: m.end, cameraId: cam.id, kind: m.kind, file, key, bytes: m.blob.size, reason: m.reason });
     if (m.kind !== 'timelapse') {
       const e = { t: Date.now(), deviceId: cam.id, kind: 'info' as const, text: `${m.kind === 'clip' ? 'Clip' : 'Snapshot'} saved: ${file}${m.reason ? ` (${m.reason})` : ''}` };
       run.events.push(e);
@@ -257,9 +264,12 @@ export class App {
 
   private saveTimer?: number;
   private lastTares = '';
-  /** Save when tares change (cheap check; changed fires every poll). */
+  /**
+   * Save when tares or the last hot-plate reading change (cheap check; changed fires every poll).
+   * The hot reading is saved at most once a minute or per 5 °C, so MAY BE HOT survives a reload (§15).
+   */
   private saveSoon(): void {
-    const t = JSON.stringify(this.devices.map((d) => d.tares));
+    const t = JSON.stringify(this.devices.map((d) => [d.tares, d.lastHot ? [Math.round(d.lastHot.v / 5), Math.floor(d.lastHot.t / 60000)] : 0]));
     if (t === this.lastTares) return;
     this.lastTares = t;
     clearTimeout(this.saveTimer);
@@ -267,6 +277,7 @@ export class App {
   }
 
   save(): void {
+    if (this.restoring) return;
     this.config.devices = this.devices.map((d) => {
       const info = d.transport instanceof SerialTransport ? d.transport.port.getInfo() : {};
       return {
@@ -309,9 +320,22 @@ export class App {
    * ports this site was already granted (no click needed). Unmatched ones are returned so the UI
    * can offer "Reconnect".
    */
+  /** True while restore() is re-adding saved units: a save then would drop the ones not yet back. */
+  private restoring = false;
+
   async restore(): Promise<SavedDevice[]> {
     const cfg = this.loadSaved();
     if (!cfg) return [];
+    this.restoring = true;
+    try {
+      return await this.restoreFrom(cfg);
+    } finally {
+      this.restoring = false;
+      this.save();
+    }
+  }
+
+  private async restoreFrom(cfg: NonNullable<ReturnType<App['loadSaved']>>): Promise<SavedDevice[]> {
     this.config.name = cfg.name;
     // Cameras: the browser remembers camera permission per site, so they come back without a click.
     for (const c of cfg.cameras ?? []) await this.addCamera(c.label, c.deviceId, c.id);
@@ -353,9 +377,8 @@ export class App {
         missing.push(s);
       }
     }
-    // Keep missing devices in the saved config until the user reconnects or forgets them.
+    // Keep missing devices in the saved config until the user reconnects or forgets them (saved by restore()).
     this.missing = missing;
-    this.save();
     this.changed.emit();
     return missing;
   }
@@ -403,10 +426,13 @@ export class App {
     this.sampled.emit(row);
   }
 
+  /** The stopped recording not yet downloaded: its camera files are kept when a new recording starts. */
+  undownloaded?: Run;
+
   startRun(): void {
     this.run = { startedAt: Date.now(), rows: [], events: [], notes: [], columns: [], devices: [], media: [] };
     this.refreshRunColumns();
-    void mediaStore.clear().catch(() => {});
+    void mediaStore.clearExcept(new Set((this.undownloaded?.media ?? []).map((m) => m.key))).catch(() => {});
     for (const cam of this.cameras) {
       this.addRunCamera(cam);
       cam.startRecording();
@@ -434,6 +460,7 @@ export class App {
     await Promise.all(this.cameras.map((c) => c.stopRecording()));
     run.endedAt = Date.now();
     this.run = undefined;
+    this.undownloaded = run;
     this.changed.emit();
     return run;
   }

@@ -24,6 +24,9 @@ export class SerialTransport implements Transport {
   private waiting?: { resolve: (line: string) => void };
   private chain: Promise<unknown> = Promise.resolve();
   private closing = false;
+  /** Set when a request timed out: its reply may still arrive and must not be taken as the next one's. */
+  private stale = false;
+  private lastRx = 0;
 
   constructor(
     readonly port: SerialPort,
@@ -60,6 +63,7 @@ export class SerialTransport implements Transport {
       while (this.reader) {
         const { value, done } = await this.reader.read();
         if (done) break;
+        this.lastRx = Date.now();
         this.buffer += value;
         let idx: number;
         while ((idx = this.buffer.search(/\r?\n/)) >= 0) {
@@ -95,6 +99,7 @@ export class SerialTransport implements Transport {
 
   request(cmd: string, expectReply: boolean): Promise<string | null> {
     const run = async (): Promise<string | null> => {
+      if (this.stale) await this.drain();
       await this.write(cmd);
       if (!expectReply) {
         await sleep(this.settleMs);
@@ -103,6 +108,7 @@ export class SerialTransport implements Transport {
       return await new Promise<string>((resolve, reject) => {
         const t = setTimeout(() => {
           this.waiting = undefined;
+          this.stale = true;
           reject(new Error(`No reply to ${cmd}`));
         }, this.timeoutMs);
         this.waiting = {
@@ -116,6 +122,24 @@ export class SerialTransport implements Transport {
     const p = this.chain.then(run, run);
     this.chain = p.catch(() => {});
     return p;
+  }
+
+  resync(): void {
+    this.stale = true;
+  }
+
+  /**
+   * After a timeout, wait until the line has been quiet for a moment (at most one timeout) and drop
+   * whatever came in, so a late reply is not handed to the next command (replies carry no request id).
+   */
+  private async drain(): Promise<void> {
+    const until = Date.now() + this.timeoutMs;
+    const quietMs = Math.min(200, this.timeoutMs);
+    await sleep(Math.min(quietMs, this.timeoutMs));
+    while (Date.now() - this.lastRx < quietMs && Date.now() < until) await sleep(20);
+    if (this.buffer) this.onLog?.('info', `dropped after a timeout: ${JSON.stringify(this.buffer)}`);
+    this.buffer = '';
+    this.stale = false;
   }
 
   private async write(cmd: string): Promise<void> {

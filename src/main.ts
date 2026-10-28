@@ -189,10 +189,14 @@ app.logged.on((e) => {
   while (logList.children.length > 300) logList.lastChild!.remove();
 });
 
+// Save the page (last hot-plate reading included) when the tab is closed or reloaded.
+window.addEventListener('pagehide', () => app.save());
+
 // ---------- actions ----------
 async function stopAll() {
-  await app.stopAll();
-  toast('Stop all sent to every connected unit');
+  const { failed, offline } = await app.stopAll();
+  if (failed.length) toast(`STOP FAILED on ${failed.join('; ')}. Stop it on the unit itself.`, 'error');
+  else toast(`Stop all sent to every connected unit${offline.length ? ` (not connected, not stopped: ${offline.join(', ')})` : ''}`, offline.length ? 'error' : undefined);
 }
 
 async function toggleRecording() {
@@ -205,8 +209,7 @@ async function toggleRecording() {
     recState.textContent = lastRun ? `Stopped · ${lastRun.rows.length} rows${media} ready to download` : 'Not recording';
     dlBtn.disabled = !lastRun;
   } else {
-    app.startRun();
-    dlBtn.disabled = true;
+    app.startRun(); // the previous recording stays downloadable (its camera files are kept)
   }
 }
 
@@ -217,6 +220,7 @@ async function downloadRun() {
   if (!run.media.length) {
     download(`${stem}_samples.csv`, samplesCsv(run));
     setTimeout(() => download(`${stem}_events.csv`, eventsCsv(run)), 300);
+    if (app.undownloaded === run) app.undownloaded = undefined;
     return;
   }
   // With camera files: one zip with the CSVs, a media index and the media folders.
@@ -229,6 +233,7 @@ async function downloadRun() {
       ['media.csv', mediaCsv(run)],
     ], run.media);
     downloadBlob(`${stem}.zip`, blob);
+    if (app.undownloaded === run) app.undownloaded = undefined;
   } catch (e) {
     toast(`Could not build the zip: ${(e as Error).message}`, 'error');
   } finally {
@@ -248,7 +253,6 @@ function downloadBlob(name: string, blob: Blob) {
 }
 
 app.autoStarted.on((text) => {
-  dlBtn.disabled = true;
   toast(`Recording started automatically: ${text}`);
 });
 

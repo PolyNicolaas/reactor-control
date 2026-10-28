@@ -1,12 +1,12 @@
 # EUROSTAR 60 control — how this module is built
 
-IKA overhead stirrer, 30–2000 rpm, torque reading, PT100 input. **The smallest complete module; read
+IKA overhead stirrer, 30–2000 rpm, torque reading, PT1000 input (notes.md). **The smallest complete module; read
 it first** ([guide](../README.md)). Manual facts with pages: [`docs/manuals/eurostar-60-control/notes.md`](../../../docs/manuals/eurostar-60-control/notes.md).
 
 | File | What it shows |
 | --- | --- |
 | [`module.ts`](module.ts) | The nine sections; two functions (Stirring, Temperature); one setpoint/switch pair. |
-| [`safety.ts`](safety.ts) | One rule: torque limit. |
+| [`safety.ts`](safety.ts) | One rule: torque limit. It counts the motor as running from the speed reading too, so a start on the keypad or WiCo is covered. |
 | [`sim.ts`](sim.ts) | Physics only, on the shared NAMUR simulator; `SIM_JAM 1` blocks the shaft. |
 | [`eurostar-60-control.test.ts`](eurostar-60-control.test.ts) | Set-vs-actual against the simulator; the torque rule on timelines and on a jammed simulator. |
 

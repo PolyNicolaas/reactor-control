@@ -28,7 +28,7 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 
 - Add, remove and reorder units on the control page (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
 - One full-width card per unit, built from its module, with **one row per function** (Heating, Stirring, Weighing; each pump channel): each row has its live readings, setpoint with read-back from the unit ("Set · actual"), on/off switch (clearly ON or OFF), its **safety rules** live with on/off and settings, and *Watched by* when another unit's rules depend on it. Pump channels can be named.
-- **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
+- **STOP ALL** stops every unit and says which ones it could not stop. Removing a unit stops it before handing it back to local control.
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
 - RET balance with software tare. Per-setpoint user limits; confirmation before heating or large temperature jumps.
@@ -89,9 +89,9 @@ Cards, polling, chart, STOP ALL, recording and the safety engine pick it up auto
 | `src/main.ts` | Page layout, recording controls, wiring |
 | `src/core/types.ts` | Driver interface (readings, setpoints, switches, groups, derived values) |
 | `src/core/protocol.ts` | Wire protocols: NAMUR (IKA) and Ismatec — framing, acknowledgements, identify, probe settings |
-| `src/core/serialTransport.ts` | Web Serial: one command in flight, line and one-character replies, timeouts |
+| `src/core/serialTransport.ts` | Web Serial: one command in flight, line and one-character replies, timeouts, dropping late replies |
 | `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings |
-| `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release |
+| `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release, the safety engine (rules, trips, reset) |
 | `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
 | `src/modules/` | One folder per device module (`module.ts`, `safety.ts`, `sim.ts`, tests, README), `_template/`, `shared/` (NAMUR simulator base, safety test helpers), `index.ts` (the list of modules), [`README.md`](src/modules/README.md) (the guide) |
 | `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |

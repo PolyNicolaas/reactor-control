@@ -7,8 +7,8 @@ The safety design is described in full in [`docs/DESIGN.md` §15](../../../docs/
 
 | File | What it shows |
 | --- | --- |
-| [`module.ts`](module.ts) | Three functions (Heating, Stirring, Weighing), each its own card section. Readings valid only in some states (`validWhen`), a reading the unit gives only after a keypress (`optional`), software tare (`tareable`, `stable`), `hot`, `cautions`. |
-| [`safety.ts`](safety.ts) | Seven rules: two static limits, four that read history (one learns), one that watches another module. Shared helpers at the top. |
+| [`module.ts`](module.ts) | Three functions (Heating, Stirring, Weighing), each one row of the card. Readings valid only in some states (`validWhen`), a reading the unit gives only after a keypress (`optional`), software tare (`tareable`, `stable`), `hot`, `cautions`. |
+| [`safety.ts`](safety.ts) | Eight rules: three static (two limits and the plate reading they need), four that read history (one learns), one that watches another module. Shared helpers at the top. |
 | [`solvents.ts`](solvents.ts) | A caution list: data with sources, flagged against live values, with a one-click adjustment. |
 | [`sim.ts`](sim.ts) | Plate driven by how far the probe is from setpoint, like the unit; `SIM_PROBE_OUT 1` reproduces the runaway the rules must catch. |
 | [`ret-control-visc.test.ts`](ret-control-visc.test.ts) | Each rule on timelines (trips / must not), the rule arming when a stirrer joins the page, a trip and reset on the simulator, HOT, the solvent list. |
@@ -31,13 +31,14 @@ The safety design is described in full in [`docs/DESIGN.md` §15](../../../docs/
 | --- | --- | --- | --- |
 | 1 | Plate maximum | plate above the maximum | 250 °C |
 | 2 | Plate above setpoint | plate more than N above setpoint and not cooling | 30 °C |
+| 2b | Plate reading | no plate reading for 10 s with the heater on | — |
 | 3 | Probe responds | plate ≥ 40 °C above probe, and the probe rose less than 3 % of that gap in 5 min | 40 °C · 5 min · 3 % |
-| 4 | Probe drop | probe falls ≥ 10 °C in 2 min, setpoint unchanged, heating | 10 °C |
+| 4 | Probe drop | probe falls ≥ 10 °C in 2 min, setpoint unchanged (a poll whose setpoint read failed is skipped), heating | 10 °C |
 | 5 | Probe present | probe reading lost 10 s while heating, after one was seen | — |
 | 6 | Steady gap | plate–probe gap grows N past the gap learned at setpoint, for 30 s | 15 °C |
 | 7 | Overhead stirring *(with overhead-stirrer)* | the overhead stirrer stops or stops answering while heating, for N s | 5 s |
 
-Rules 1–2 are the floor and always on; 3–7 only add trips and can be turned off on the card. Rule 7 appears
+Rules 1, 2 and 2b are the floor and always on; 3–7 only add trips and can be turned off on the card. Rule 7 appears
 under *Watched by* on the overhead stirrer's card. Every rule's live line and its *why* are on the card.
 The unit's own safety limit (set on the unit, read as "Safety limit") is the hardware backstop.
 

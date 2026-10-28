@@ -144,7 +144,16 @@ export class DeviceInstance {
   async connect(): Promise<string> {
     await this.transport.open();
     this.connected = true;
-    const name = (await this.transport.request(this.protocol.identifyCmd, true)) ?? '';
+    let name: string;
+    try {
+      name = (await this.transport.request(this.protocol.identifyCmd, true)) ?? '';
+    } catch (e) {
+      // Not identified: do not look connected (it would never be polled, so no safety rule would run).
+      this.connected = false;
+      await this.transport.close().catch(() => {});
+      this.changed.emit(this);
+      throw e;
+    }
     this.nameReply = name;
     this.log('info', `Identified as "${name}"`);
     for (const cmd of this.driver.initCommands ?? []) {
@@ -167,14 +176,17 @@ export class DeviceInstance {
     return this.connect();
   }
 
+  /** Bumped whenever a poll loop starts, so a loop still asleep from before a reconnect ends instead of running twice. */
+  private loopGen = 0;
+
   startPolling(): void {
     if (this.polling) return;
     this.polling = true;
-    void this.pollLoop();
+    void this.pollLoop(++this.loopGen);
   }
 
-  private async pollLoop(): Promise<void> {
-    while (this.polling && this.connected) {
+  private async pollLoop(gen: number): Promise<void> {
+    while (gen === this.loopGen && this.polling && this.connected) {
       const start = performance.now();
       await this.pollOnce();
       this.changed.emit(this);
@@ -190,6 +202,10 @@ export class DeviceInstance {
     const read = async (cmd: string) => {
       try {
         const r = await this.transport.request(cmd, true);
+        if (r !== null && !this.protocol.replyFits(cmd, r)) {
+          this.transport.resync?.();
+          throw new Error(`Reply "${r}" does not belong to ${cmd}; dropped`);
+        }
         ok++;
         return r === null ? undefined : parse(r);
       } catch (e) {
@@ -210,6 +226,10 @@ export class DeviceInstance {
         } else {
           try {
             const reply = await this.transport.request(r.cmd, true);
+            if (reply !== null && !this.protocol.replyFits(r.cmd, reply)) {
+              this.transport.resync?.();
+              throw new Error('reply out of step');
+            }
             v = reply === null ? undefined : parse(reply);
             if (v === 0 && r.optional.zeroMeansMissing) v = undefined;
           } catch {
@@ -360,10 +380,11 @@ export class DeviceInstance {
         if (!sw) continue;
         try {
           await this.send(sw.off);
+          this.snapshot.switches[key] = false;
         } catch (e) {
+          // Keep showing it on: it may still be on. Sent again every 5 s while the trip lasts.
           this.log('error', `Safety stop could not send ${sw.off}: ${(e as Error).message}`);
         }
-        this.snapshot.switches[key] = false;
       }
       if (fresh) {
         const names = [...new Set(rule.switches.map((k) => this.driver.switches.find((x) => x.key === k)?.label ?? k))].join(', ').toLowerCase();
@@ -510,11 +531,19 @@ export class DeviceInstance {
   /** Clear all trips. Refused (throws) while any tripped rule still trips. */
   resetSafety(): void {
     const now = Date.now();
-    for (const r of this.driver.safety?.rules ?? []) {
-      if (!this.tripped[r.key]) continue;
+    const trippedRules = (this.driver.safety?.rules ?? []).filter((r) => this.tripped[r.key]);
+    const check = (r: SafetyRule) => {
       // Check on a copy of the rule's memory, so a reset attempt changes nothing.
       const st = this.evaluate(r, now, { ...(this.ruleMem[r.key] ?? {}) });
       if (st.state === 'trip') throw new Error(`Cannot reset yet — ${r.label}: ${st.text}`);
+    };
+    for (const r of trippedRules) if (!r.onReset) check(r);
+    // Only once every other trip has cleared: rules whose reset changes something (dispensed back to 0).
+    for (const r of trippedRules) {
+      if (!r.onReset) continue;
+      r.onReset.apply(this.snapshot);
+      this.log('info', `${r.label}: ${r.onReset.note}`);
+      check(r);
     }
     const was = Object.keys(this.tripped);
     this.tripped = {};
@@ -636,16 +665,21 @@ export class DeviceInstance {
     this.changed.emit(this);
   }
 
-  async stopAll(): Promise<void> {
+  /** Sends every stop command. Returns the ones that failed (empty when all went out). */
+  async stopAll(): Promise<string[]> {
+    const failed: string[] = [];
     for (const cmd of this.driver.stopCommands) {
       try {
         await this.send(cmd);
       } catch (e) {
-        this.log('error', `${cmd}: ${(e as Error).message}`);
+        failed.push(cmd);
+        this.log('error', `Stop ${cmd} failed: ${(e as Error).message}`);
       }
     }
-    for (const k of Object.keys(this.snapshot.switches)) this.snapshot.switches[k] = false;
+    // Only mark everything off when every stop went out; otherwise the next poll shows the truth.
+    if (!failed.length) for (const k of Object.keys(this.snapshot.switches)) this.snapshot.switches[k] = false;
     this.changed.emit(this);
+    return failed;
   }
 
   /** Tidy a typed command: trim, and upper-case it unless the protocol is case-sensitive. */

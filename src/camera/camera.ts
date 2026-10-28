@@ -228,6 +228,8 @@ export class CameraModule {
     this.reader = undefined;
     if (this.encoder && this.encoder.state !== 'closed') this.encoder.close();
     this.encoder = undefined;
+    // A clip being captured (camera unplugged or removed mid-clip) is saved as far as it got.
+    for (const clip of this.buffer.flush()) void this.saveClip(clip);
     this.buffer.clear();
     this.frameTimes.clear();
     this.encodeFps = 0;
@@ -236,7 +238,8 @@ export class CameraModule {
   private async timelapseFrame(): Promise<void> {
     if (!this.recording) return;
     const blob = await this.grab();
-    if (!blob) return;
+    // Recording may have stopped while the frame was being made: drop it (it would download as a stray file).
+    if (!blob || !this.recording) return;
     this.counts.timelapse++;
     this.media.emit({ kind: 'timelapse', t: Date.now(), blob, ext: 'jpg' });
     this.changed.emit(this);

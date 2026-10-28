@@ -21,7 +21,10 @@ const torqueLimit: SafetyRule = {
   ],
   evaluate({ s, history, set, now }) {
     const tq = s.values.torque;
-    if (!s.switches.motor || tq === undefined) return { state: 'idle', text: 'Motor off' };
+    // Running judged from the speed as well as the switch: a start on the keypad or WiCo counts too.
+    const running = s.switches.motor || (s.values.speed ?? 0) > 20;
+    if (!running) return { state: 'idle', text: 'Motor off' };
+    if (tq === undefined) return { state: 'idle', text: 'No torque reading' };
     // Over the limit for the last 3 s, so a single noisy reading does not stop the run.
     const recent = history.filter((x) => now - x.t <= 3000);
     const over = recent.length >= 2 && recent.every((x) => (x.values.torque ?? 0) > set.torqueMax);

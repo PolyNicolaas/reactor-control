@@ -29,16 +29,31 @@ const heatOnlyWhileStirring: SafetyRule = {
   withPeer: 'stirrer',
   watchesActivity: 'stirring',  // which activity of the partner it depends on
   watchNote: 'Shown on the partner\'s card under "Watched by": what stopping it will do here.',
-  evaluate({ s, peers }) {
-    if (!s.switches.heater) return { state: 'idle', text: 'Heater off' };
+  settings: [{ key: 'noStirS', label: 'Heater off after no stirring for', unit: 's', default: 5, min: 1, max: 120, step: 1 }],
+  evaluate({ s, set, peers, mem, history, now }) {
+    // Act on readings, not only on the switch (principle 1): heating started on the unit's own keys
+    // counts too, seen as the block warming by more than 2 °C over the last 20 s.
+    const ago = history.find((x) => now - x.t <= 20_000)?.values.temp;
+    const heating = s.switches.heater || (ago !== undefined && (s.values.temp ?? ago) > ago + 2);
+    if (!heating) {
+      mem.since = undefined;
+      return { state: 'idle', text: 'Not heating' };
+    }
     const stirring = peers.some((p) => p.live && p.active('stirring'));
-    return stirring
-      ? { state: 'ok', text: `Stirring: ${peers.map((p) => p.label).join(', ')}` }
-      : { state: 'trip', text: 'Heating while nothing on the page is stirring' };
+    if (stirring) {
+      mem.since = undefined;
+      return { state: 'ok', text: `Stirring: ${peers.map((p) => p.label).join(', ')}` };
+    }
+    // Hold for a few seconds so one missed reading does not stop the run (principle 4).
+    const since = (mem.since as number | undefined) ?? now;
+    mem.since = since;
+    const secs = Math.round((now - since) / 1000);
+    if (now - since >= set.noStirS * 1000) return { state: 'trip', text: `Heating with nothing stirring for ${secs} s` };
+    return { state: 'near', text: `Heating with nothing stirring for ${secs} s · stops at ${set.noStirS} s` };
   },
 };
 
 export const templateSafety: ModuleSafety = {
-  historyS: 0, // seconds of history any rule needs (ctx.history); 0 if only the latest poll is used
+  historyS: 30, // seconds of history any rule needs (ctx.history); 0 if only the latest poll is used
   rules: [overTemp, heatOnlyWhileStirring],
 };

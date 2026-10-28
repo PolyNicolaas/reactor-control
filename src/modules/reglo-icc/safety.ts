@@ -17,6 +17,8 @@ const volumeLimits: SafetyRule[] = CHANNELS.map((n) => ({
   settings: [
     { key: `volumeMax${n}`, label: `Ch ${n} max dispensed`, unit: 'mL', default: 10, min: 0.5, max: 5000, step: 0.5, hint: 'Channel stops at this volume.' },
   ],
+  // Dispensed only grows, so this trip cannot clear by itself: resetting it starts the count again.
+  onReset: { note: `ch ${n} dispensed set back to 0`, apply: (s) => { s.values[`dispensed${n}`] = 0; } },
   evaluate({ s, set }) {
     const max = set[`volumeMax${n}`];
     const v = s.values[`dispensed${n}`] ?? 0;
@@ -37,7 +39,8 @@ const noStirring: SafetyRule = {
   watchNote: 'When nothing on the page has stirred for {noStirS} s, the pump stops dosing.',
   settings: [{ key: 'noStirS', label: 'Stop dosing after no stirring for', unit: 's', default: 5, min: 1, max: 120, step: 1 }],
   evaluate({ s, set, peers, mem, now }) {
-    const dosing = CHANNELS.some((n) => s.switches[`run${n}`]);
+    // Act on what the pump reports as well as the switches: a start on the pump's keypad counts too.
+    const dosing = CHANNELS.some((n) => s.switches[`run${n}`]) || s.values.running === 1;
     const stirring = peers.filter((p) => p.live && p.active('stirring'));
     if (stirring.length) {
       mem.since = undefined;

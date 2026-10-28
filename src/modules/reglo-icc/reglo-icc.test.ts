@@ -82,6 +82,41 @@ describe('Reglo ICC driver against the simulator', () => {
 describe('Reglo safety', () => {
   const pump = (dispensed: number, run = true) => snap({ dispensed1: dispensed }, {}, { run1: run });
 
+  it('every channel has its own volume limit: trips its own channel at its maximum, not below', () => {
+    for (const n of [1, 2, 3, 4]) {
+      const ch = (v: number) => snap({ [`dispensed${n}`]: v }, {}, { [`run${n}`]: true });
+      const hit = runSafety(regloSafety, (t) => ch(t * 0.1), 200, { on: [`volume${n}`], set: { [`volumeMax${n}`]: 5 } });
+      expect(hit.rule, `ch ${n}`).toBe(`volume${n}`);
+      expect(hit.t, `ch ${n}`).toBe(50);
+      expect(regloSafety.rules.find((r) => r.key === `volume${n}`)!.switches).toEqual([`run${n}`]);
+      expect(runSafety(regloSafety, (t) => ch(Math.min(4.9, t * 0.1)), 200, { on: [`volume${n}`], set: { [`volumeMax${n}`]: 5 } }).rule, `ch ${n}`).toBeUndefined();
+    }
+  });
+
+  it('a volume-limit trip can be reset: the reset starts the count again', async () => {
+    const dev = new DeviceInstance('p', regloIcc, 'Pump', '#000', regloIcc.simulate(), 100);
+    await dev.connect();
+    dev.setRuleOn('volume1', true);
+    dev.setSafetySetting('volumeMax1', 0.5);
+    dev.snapshot.values.dispensed1 = 0.6;
+    await wait(300);
+    expect(dev.tripped.volume1).toBeTruthy();
+    dev.resetSafety();
+    expect(dev.tripped.volume1).toBeUndefined();
+    expect(dev.snapshot.values.dispensed1).toBeLessThan(0.5);
+    await dev.disconnect(true);
+  });
+
+  it('Dose only while stirring: keeps dosing while something stirs; a start on the pump keypad counts as dosing', () => {
+    const stirrer = (stirring: boolean) => [peer({ label: 'Stirrer', provides: ['stirrer', 'overhead-stirrer'], active: { stirring } })];
+    expect(runSafety(regloSafety, () => pump(1), 100, { peers: () => stirrer(true) }).rule).toBeUndefined();
+    const keypad = () => snap({ dispensed1: 0, running: 1 }, {}, { run1: false });
+    const hit = runSafety(regloSafety, keypad, 100, { peers: (t) => stirrer(t < 20) });
+    expect(hit.rule).toBe('noStirring');
+    expect(hit.t).toBe(25);
+    expect(runSafety(regloSafety, () => snap({ running: 0 }, {}, { run1: false }), 100, { peers: () => stirrer(false) }).rule).toBeUndefined();
+  });
+
   it('volume limit stops the channel at its maximum (off by default)', () => {
     expect(runSafety(regloSafety, (t) => pump(t * 0.1), 100).statuses.volume1.state).toBe('off');
     const hit = runSafety(regloSafety, (t) => pump(t * 0.1), 200, { on: ['volume1'], set: { volumeMax1: 5 } });

@@ -27,5 +27,8 @@ Manual facts with pages: [`docs/manuals/reglo-icc/notes.md`](../../../docs/manua
 | Ch *n* volume limit (one per channel) | that channel's dispensed volume reaches the maximum | off (10 mL when turned on) | that channel |
 | Dose only while stirring *(with stirrer)* | a channel runs while nothing on the page is stirring, for N s | 5 s | all channels |
 
-The volume limit uses the app's estimate; keep a margin until the channel is calibrated. Dosing a set
+The volume limit uses the app's estimate; keep a margin until the channel is calibrated. Dispensed only grows, so
+**Reset safety stop** on a volume trip sets that channel's Dispensed back to 0 (`onReset` on the rule: the
+pattern for a trip that cannot clear by itself). *Dose only while stirring* also counts the pump's own
+running reply (`1E`), so a channel started on the keypad is stopped too. Dosing a set
 volume in the pump's own Volume mode (DESIGN §11) would also stop the pump if the Pi fails.

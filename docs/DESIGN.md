@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-28 (bug review: empty setpoint box no longer sends 0; card wording, contents links).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-28 (bug review, D58: replies kept in step, safer stops and resets, RET plate-reading rule, rules act on readings, no save mid-restore; card rows D57).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (method format 0.2, designed, not built) · [manuals/](manuals/README.md) (device notes)
 
@@ -49,14 +49,14 @@ The station workflow (D23):
 
 | What | Where | When / how long | Notes |
 | --- | --- | --- | --- |
-| Page setup: devices, names, colours, order, user limits, safety settings and rules turned on/off per module (D43, D45; pages saved before keep theirs), last hot-plate reading (D36), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
+| Page setup: devices, names, colours, order, user limits, safety settings and rules turned on/off per module (D43, D45; pages saved before keep theirs), last hot-plate reading (D36; saved at least once a minute or per 5 °C, and when the tab closes), serial settings, pump channel names, balance tare | Browser storage (`reactor-control.page`) on that computer | Until changed or browser data is cleared | Restored on reload; real units reconnect to ports already allowed |
 | Chart view: time range, hidden lanes/channels | Browser storage (`reactor-control.chart`) | Same | |
 | Last hour of samples (for the chart) | Memory | Lost on reload | |
 | **Recording — samples**, 1 per second per device (download: two CSV files, or one zip with `samples.csv`, `events.csv`, `media.csv` and the media folders when a camera recorded): every reading (actual), setpoint as read back from the unit, switch state (0/1); for the balance also gross and tare; pump flow (set rate while running) and dispensed (app estimate) | Memory, then `reactor-run_<date>_samples.csv` on **Download CSV** | **Lost if the page reloads before download** | Readings outside their valid state (balance while heating/stirring) are blank |
-| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, safety stops (rule and reason; also trigger a camera clip) and resets, safety rules turned on or off, safety setting changes (including "Cap plate at" from the solvent list), safety rules armed or disarmed as modules join or leave the page | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
+| **Recording — events**: every command sent except routine polling, connection info, errors, notes, tare actions, terminal commands, safety stops (rule and reason; also trigger a camera clip) and resets, safety rules turned on or off, safety setting changes (including "Cap plate at" from the solvent list), safety rules armed or disarmed as modules join or leave the page, Stop all with any unit whose stop failed or that was not connected, replies dropped because they did not belong to their command | Memory, then `reactor-run_<date>_events.csv` | Same | Changes are logged as commands; who made them is not yet recorded |
 | Event log on screen | Memory (last 300) | Lost on reload | |
-| **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until the next recording starts | |
-| **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31) | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
+| **Camera — time-lapse**: one 720p JPEG every 10 s per camera while recording | Browser IndexedDB, then in the recording zip (`timelapse/`) on **Download recording** | Until a new recording starts; the previous recording's files are kept until it is downloaded (D58) | |
+| **Camera — clips**: WebM (VP8, 720p, 10 frames/s) from 60 s before to 60 s after every change: a setpoint or switch changed on a card, stirring starting or stopping (seen in the speed reading, so also when started on the unit), a setpoint changed on the unit or in the terminal, a pump channel stopping on the pump, Stop all, a note, **Mark**. Merged when changes are close, max 5 min. With a camera on the page, the first change **starts the recording by itself** (D31); the previous recording stays downloadable. A clip being captured when its camera is unplugged or removed is saved as far as it got | Browser IndexedDB, then `clips/` in the zip | Same | Each clip is listed in `media.csv` with the change that triggered it, and in the events |
 | **Camera — snapshots** (button) | While recording: `snapshots/` in the zip; otherwise downloaded at once | Same | |
 | Camera list (name, which camera) | Browser storage (`reactor-control.page`) | Until changed | Cameras restart on reload once the site has camera permission |
 
@@ -84,7 +84,8 @@ Not recorded today: reaction ID, station name, operator, the method/plan, the so
 - **One command in flight per port**; polling and user commands share the queue.
 - **Cameras are not serial devices.** They use the browser camera API (`getUserMedia`) and have their own card and code (`src/camera/`). Every change is logged as a note — changes made on the cards, and changes each unit shows by itself, found by polling (activity crossing a threshold, e.g. speed above 20 rpm = stirring; setpoints that changed without a write from the card). Each note while recording triggers a clip on every camera; with a camera present, a change starts the recording if none is running (D31). The encoder runs whenever a camera is live. Clips are encoded once (WebCodecs) into a rolling 60 s buffer, so a clip can start before the change (D28).
 - **Simulators and tests:** every module has a simulated unit (usable from Add device; IKA modules share `shared/namurSim.ts` and describe only their physics) and tests in its own folder; every safety rule is tested on made-up timelines (`shared/testing.ts`) where it must trip and where it must not. Core tests are in `src/test/`. All run on every push (D27).
-- **Safety in the app:** device ranges, per-setpoint user limits, confirmation before heating or large temperature jumps, Stop all, removing a unit stops it first, pump channels marked off when the pump stops itself.
+- **Safety in the app:** device ranges, per-setpoint user limits (an empty box is refused, never sent as 0), confirmation before heating or large temperature jumps, Stop all (says which units it could not stop, and leaves them shown as on), removing a unit stops it first and lists the rules on other units that stop watching it, pump channels marked off when the pump stops itself.
+- **Replies stay in step (D58).** Replies carry no request id. After a timeout the port waits until the line is quiet and drops what came late; NAMUR replies must end in the channel they were asked for (`IN_PV_4` → `… 4`) and an echoed write is never taken as a reply. A unit that does not answer its identify command is not shown as connected.
 
 ### When a connection drops (D26)
 
@@ -164,6 +165,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D55 | 2026-10-27 | **Streamlined device cards**: cards are narrow columns side by side (≥ 340 px each); functions stack inside a card as compact blocks with a divider; values are one row of numbers with small labels (no tiles); each setpoint is one line (label · value · unit · **Set**) with set-vs-actual under it; on/off functions are **switches** that show ON (green track, green-tinted, the section gets a green edge) or OFF (grey) — locked ones get a red dashed border; safety rule toggles show ON/OFF in the track. Supersedes the wide card layout of D47 (the grouping by function stays) | User feedback: cards too wide and roomy, on/off state hard to see |
 | D56 | 2026-10-27 | **Method file format 0.2 is step-based** (`steps` with `do` per role and one `goOnWhen`), replacing the 0.1 draft's per-role `lanes` joined by gates and separate `prompts`. Example in `examples/methods/`; the 0.1 example is kept for reference | Follows the chosen editor (D50) and "every change is a step boundary" (D53): the file reads like the table, one list instead of parallel lanes |
 | D57 | 2026-10-28 | **Each function is a row**: cards are full width, one under the other; inside a card each function (Heating, Stirring, Weighing, each pump channel) is one row with four aligned columns — name and on/off switch · live values · setpoints with set-vs-actual · safety rules, cautions and *Watched by*. Below 1100 px the safety column moves under values and setpoints; on a phone the row stacks. Supersedes D55's narrow side-by-side columns (the compact values, one-line setpoints and switches of D55 stay) | User feedback: a row per function reads cleaner, and rows line up across devices |
+| D58 | 2026-10-28 | **Bug review fixes.** (a) Serial replies are checked against their command and the line is drained after a timeout, so a late reply or an echo can no longer shift every reading by one; (b) one poll loop per unit, also after Reconnect; a unit that fails to identify shows Disconnected; (c) a stop or safety stop that fails leaves the switch shown as on and is reported (Stop all names the unit); (d) RET rule **Plate reading** (required): heater off when the plate reading is lost for 10 s with the heater on; a failed setpoint read no longer resets *Steady gap* or blinds *Probe drop*; *Steady gap* learns at any poll rate; (e) EUROSTAR *Torque limit* and Reglo *Dose only while stirring* act on readings (speed, pump running) so keypad starts count; (f) resetting a Reglo *volume limit* trip sets that channel's Dispensed back to 0 (`onReset`); (g) a new recording keeps the previous recording's camera files until it is downloaded; (h) an empty setpoint or safety-setting box is refused, not read as 0 | A review of the code found each of these could hide a hazard or lose data: a shifted reply can feed a wrong value to a safety rule, a lost plate reading made rules 1–2 idle, keypad starts slipped past rules that read only the app's switches (principle 1), and a volume trip could never be reset |
 
 ## 6. Methods (designed, not built)
 
@@ -368,11 +370,11 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 
 - Recordings live in memory until downloaded; a reload loses them (fixed by roadmap item 1).
 - No reaction ID, station name or operator in the record yet; the CSV files are named by date only.
-- A heater switched on with the unit's own controls is not detected (only from the card); `STATUS_1` on the RET could tell, once tested on the bench. Auto-start of recording happens only with a camera on the page.
-- Camera media stays in that browser until downloaded and is cleared when the next recording starts; clips need Chromium (WebCodecs); the encode rate on a Pi with VNC is untested; focus/exposure lock depends on the camera.
+- The app's on/off switches show only what was switched from the card; the safety rules judge running from the readings instead (plate rising, speed, pump running), so keypad starts are covered by them. `STATUS_1` on the RET could tell directly, once tested on the bench. Auto-start of recording happens only with a camera on the page.
+- Camera media stays in that browser until downloaded; a new recording clears everything except the previous recording while it has not been downloaded (an older one is lost); clips need Chromium (WebCodecs); the encode rate on a Pi with VNC is untested; focus/exposure lock depends on the camera.
 - Changes are logged as commands, not as "who changed what".
 - VNC has no password (D40): anyone who can reach a station on the network can control it, the connection is unencrypted, and the app cannot tell who is connected. The operator must be entered in the app once reaction IDs exist.
-- Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app.
+- Pump "Flow" is the set rate while running; "Dispensed" is an estimate until channels are calibrated. Channels started on the pump keypad are not known to the app (no flow or Dispensed for them); *Dose only while stirring* still sees them through the pump's running reply. Dispensed counts from when the unit was connected; only resetting a volume-limit trip sets it back to 0.
 - Reglo ICC commands are from the manual and not yet bench-tested (see its notes).
 - RET watchdog is documented but unused until tested.
 - **Hotplate safety (§15) is software**: it cannot act if the browser, the Pi or the USB link is down. The hardware cut-off is the RET's own safety temperature (read as "Safety limit", set on the unit, default up to 380 °C): set it on each unit to just above the hottest plate a reaction needs. The interlock thresholds are first guesses from the simulator; check them on the bench with a real flask/oil bath (a big bath may need a larger "plate above setpoint", a slow one a lower "probe check: min rise", a big cold addition a larger "probe drop trip"; reflux starting at setpoint may trip the steady-gap rule).
@@ -381,7 +383,8 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 - The stir bar decoupling is not seen directly (speed shows the motor, not the bar); only its effect on the plate–probe gap is.
 - The solvent list is a fixed reference list, not tied to what is actually in the flask.
 - RET balance: mass needs the weighing key (G) pressed on the unit; the tare is the app's, not the RET's (its display shows gross).
-- Our RET has a blank stored name, so Auto-detect cannot identify it; pick the model in Add device (D30).
+- Our RET has a blank stored name, so Auto-detect cannot identify it; pick the model in Add device (D30). The RET simulator answers a valid name.
+- The NAMUR simulator never echoes writes or sends unsolicited lines, and ignores line ends; the reply checks of D58 are tested with a fake port, not against real echoes.
 
 ## 14. Open questions
 
@@ -403,6 +406,8 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 - RET: what does `IN_PV_1` read with the probe unplugged, and does the unit then regulate on the plate? Should the interlock also refuse heating when the probe reading is missing?
 - RET: can the safety temperature be read as the set value (`IN_SP_3`) and should the app warn when it is above the interlock's plate maximum? Should the watchdog (`OUT_WD2` with `OUT_SP_12`) be armed so the unit drops to a safe temperature if the Pi dies?
 - Should *Overhead stirring* also trip when someone turns the stirrer off on purpose while heating (today: yes, after 5 s), or only on a stall/error? Same for *Dose only while stirring*.
+- Reglo ICC: does `1E` (is running) answer for the whole pump or only channel 1 with channel addressing on? If per channel, the driver must poll each channel; the simulator assumes pump-wide.
+- EUROSTAR: does it echo writes such as `START_4`, and is its documented line end (blank CR blank LF) read as an extra command? The reply checks (D58) drop such lines, but the bench log will show whether they happen.
 - EUROSTAR: after `STOP_4` / `START_4`, does `IN_SP_4` read 0 (set speed cleared) or the old value with the motor not turning? The card handles both (D33); the answer decides whether the driver should resend the speed on Motor on.
 - Department server: host (VM/container platform), hostname, administration, stack, issue destination, login (§12 "To define").
 
@@ -421,19 +426,20 @@ Setup: flash Raspberry Pi OS (64-bit, desktop) with Imager using the station nam
 | Module safety rules watching other modules (D44) | Heater off when the overhead stirrer stops | No | Built |
 | HOT state (D36), solvent list (D37) | Make the hazard visible; one-click cap | No | Built |
 
-**Safety rules** (`src/modules/ret-control-visc/safety.ts`, D43). Checked after every poll (1 s), whether the heater was switched on from the card or the keypad. Any rule sends `STOP_1`, latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until **Reset safety stop** on the card; reset is refused while a rule still trips. Each rule's live state, numbers, *why*, settings and on/off toggle are on its row in the card's Safety section, saved per unit with the page; rules 1 and 2 are always on (D45). Dynamic rules only add trips (D35).
+**Safety rules** (`src/modules/ret-control-visc/safety.ts`, D43). Checked after every poll (1 s), whether the heater was switched on from the card or the keypad. Any rule sends `STOP_1`, latches, repeats `STOP_1` every 5 s while the condition lasts, and refuses Heater on until **Reset safety stop** on the card; reset is refused while a rule still trips. Each rule's live state, numbers, *why*, settings and on/off toggle are on its row in the card's Safety section, saved per unit with the page; rules 1, 2 and 2b are always on (D45, D58). Dynamic rules only add trips (D35). A failed read (one value missing for one poll) is skipped by the rules that look back, not taken as a change.
 
 | # | Rule (name on the card) | Default | Catches |
 | --- | --- | --- | --- |
 | 1 | *Plate maximum* — plate above the maximum | 250 °C | Anything; also keep it below solvent autoignition (list below) |
 | 2 | *Plate above setpoint* — plate more than *N* above the setpoint and not cooling (lowering the setpoint over a hot plate does not trip) | 30 °C | Probe out of the medium at low and medium setpoints |
+| 2b | *Plate reading* — no plate reading for 10 s with the heater on (D58) | — | Rules 1 and 2 blind because the unit stopped reporting the plate while still answering other reads |
 | 3 | *Probe responds* — plate ≥ 40 °C above the probe, probe below setpoint, and over 5 min the probe rises less than 3 % of the mean gap (never less than 1 °C) | 40 °C, 5 min, 3 % | Probe beside the flask or hanging in warm air; scales with how hard the plate is driving |
 | 4 | *Probe drop* — probe falls ≥ 10 °C within 2 min, setpoint unchanged, probe more than 5 °C below setpoint, heating | 10 °C | Probe pulled out mid-run (seconds, not minutes) |
 | 5 | *Probe present* — probe reading missing or implausible (below −40 or above 400 °C) for 10 s while heating, after a probe was seen this session | — | Probe unplugged mid-run. Plate-only use without a probe is not affected |
 | 6 | *Steady gap* — once the probe has held the setpoint (±1.5 °C) for 3 min, the median plate–probe gap is learned (relearned on each setpoint change, only ever lowered); trip if the gap exceeds it by *N* for 30 s | 15 °C | Probe lifted slowly, flask boiling dry, stir bar decoupled, vessel moved |
 | 7 | *Overhead stirring* (with `overhead-stirrer`, D44) — heating, and an overhead stirrer that was stirring stops or stops answering for *N* s; heating before it ever stirred shows amber only. Listed under *Watched by* on the stirrer's card; Motor off there asks first (D46) | 5 s | Stirrer switched off, stalled, in error or unplugged while the plate heats an unstirred flask |
 
-The Safety section's heading shows the overall state and the plate cut-off ("Safety · 7 of 7 rules on · 3 active · Plate cut-off 80 °C"); each rule's row shows its live line, e.g. "Gap 12.4 °C · learned 11.8 °C · stops above 26.8 °C".
+The Safety section's heading shows the overall state and the plate cut-off ("Safety · 8 of 8 rules on · 4 active · Plate cut-off 80 °C"); each rule's row shows its live line, e.g. "Gap 12.4 °C · learned 11.8 °C · stops above 26.8 °C".
 
 **HOT state (D36).** HOT and the plate temperature in the card header from 50 °C plate, heating or not; the card gets an orange edge. When the unit stops answering, is unplugged, or the page reloads without it, the card shows MAY BE HOT with the last reading and its time, for up to an hour (the last reading is saved with the page).
 
@@ -453,7 +459,9 @@ The Safety section's heading shows the overall state and the plate cut-off ("Saf
 | Solvent autoignition below the plate temperature | Solvent list + Cap plate at (manual); automatic cap is roadmap item 10 |
 | Plate still hot after the run | HOT / MAY BE HOT |
 | Pi, browser or USB failure | Unit safety limit only; watchdog mode 2 planned |
-| Heater started from the keypad | All rules act on the readings, not the app's switch state |
+| Heater started from the keypad | All rules act on the readings, not the app's switch state (2b needs the heater switch) |
+| Plate reading lost while the unit still answers | Rule 2b (D58) |
+| A late or echoed reply read as another value | Replies checked against their command (D58, §4) |
 
 **To check on the bench:** plate overshoot in normal heat-ups (small flask, large flask, oil bath) to set rules 2–3; how far a cold addition drops the probe (rule 4); reflux onset vs rule 6; what the RET reports and does with the probe unplugged; watchdog mode 2.
 

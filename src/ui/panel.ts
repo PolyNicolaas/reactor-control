@@ -383,7 +383,10 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     const msg = app.run
       ? `Remove ${dev.label} during a recording? Its data so far stays in the run. The unit is stopped and released to local control.`
       : `Remove ${dev.label} from this page? The unit is stopped and released to local control.`;
-    if (!confirm(msg)) return;
+    // Rules on other units that watch this one stand down when it leaves (e.g. heating while stirring).
+    const watchers = dev.watchedBy().filter((w) => w.on);
+    const warn = watchers.length ? `\n\nThese rules stop watching it:\n${watchers.map((w) => `• ${w.dev.label} › ${w.rule.label}`).join('\n')}\nMake sure what they guard is off or safe first.` : '';
+    if (!confirm(msg + warn)) return;
     await app.removeDevice(dev);
   }
 
@@ -509,7 +512,7 @@ function rulesBlock(app: App, dev: DeviceInstance, rules: SafetyRule[]): { el: H
       i.addEventListener('change', () => {
         const before = dev.safetyValues()[st.key];
         try {
-          const v = dev.setSafetySetting(st.key, Number(i.value));
+          const v = dev.setSafetySetting(st.key, i.value.trim() === '' ? NaN : Number(i.value)); // empty is not 0
           i.value = String(v);
           if (v !== before) {
             app.change(`${dev.label}: ${r.label} — ${st.label.toLowerCase()} ${before} → ${v} ${st.unit}`);

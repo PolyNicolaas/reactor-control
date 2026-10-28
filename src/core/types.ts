@@ -167,6 +167,11 @@ export interface SafetyRule {
   watchesActivity?: string;
   /** Shown on the partner's card under "Watched by". {settingKey} is replaced by the setting's value. */
   watchNote?: string;
+  /**
+   * What "Reset safety stop" does for this rule besides clearing the trip, for a trip that cannot
+   * clear by itself (e.g. a volume limit: dispensed only grows). `note` is logged; `apply` changes the snapshot.
+   */
+  onReset?: { note: string; apply(s: DeviceSnapshot): void };
   evaluate(ctx: RuleContext): RuleStatus;
 }
 
@@ -290,6 +295,8 @@ export interface Transport {
   request(cmd: string, expectReply: boolean): Promise<string | null>;
   onDisconnect?: () => void;
   onLog?: (dir: 'tx' | 'rx' | 'info', text: string) => void;
+  /** A reply did not belong to its command: drop whatever is still coming before the next one. */
+  resync?(): void;
 }
 
 export const NAMUR_SERIAL: SerialOptions = {

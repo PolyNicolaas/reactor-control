@@ -3,7 +3,7 @@ import { NamurSim, approach, noise } from '../shared/namurSim';
 /**
  * Simulated EUROSTAR 60 control. The shared NamurSim does the protocol; this file is only physics:
  * speed follows the set speed while the motor is on, torque grows with speed and with a slowly
- * thickening mixture, and the PT100 input reads room temperature.
+ * thickening mixture, and the PT1000 input reads room temperature.
  *
  * Extra test command: SIM_JAM 1 / 0 — the shaft is blocked (speed 0, torque at the limit).
  */
@@ -14,7 +14,7 @@ export class EurostarSim extends NamurSim {
 
   constructor() {
     super();
-    this.pv = { 3: 22, 4: 0, 5: 2 }; // 3 = PT100 probe, 4 = speed, 5 = torque
+    this.pv = { 3: 22, 4: 0, 5: 2 }; // 3 = PT1000 probe, 4 = speed, 5 = torque
     this.sp = { 4: 300 };
   }
 

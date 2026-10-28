@@ -40,7 +40,7 @@ export async function mediaZip(folder: string, texts: [string, string][], media:
   };
   for (const [name, text] of texts) add(name, strToU8(text));
   for (const m of media) {
-    const blob = await mediaStore.get(m.file);
+    const blob = await mediaStore.get(m.key);
     if (blob) add(m.file, new Uint8Array(await blob.arrayBuffer()));
   }
   zip.end();

@@ -11,7 +11,7 @@ Each existing module is a worked example. Read them in this order:
 | Module | Read it for |
 | --- | --- |
 | [`eurostar-60-control/`](eurostar-60-control/) | **Start here.** The smallest complete module: readings, one setpoint, one switch, one safety rule, simulator, tests. |
-| [`ret-control-visc/`](ret-control-visc/) | Readings that are only valid in some states, software tare, seven safety rules (static, learning, one that watches another module), HOT warning, a caution list. |
+| [`ret-control-visc/`](ret-control-visc/) | Readings that are only valid in some states, software tare, eight safety rules (static, learning, one that watches another module), HOT warning, a caution list. |
 | [`reglo-icc/`](reglo-icc/) | A different protocol, several channels on one card, values the app computes, safety rules generated per channel, a rule that watches *any* stirrer. |
 | [`_template/`](_template/) | The skeleton to copy, every field explained. |
 
@@ -127,10 +127,13 @@ and its live line. Opening the row shows *why*, what it **Stops**, which module 
 Returning `trip` is all a rule does. The core (`src/core/device.ts`, `checkSafety`) switches the rule's
 switches off, repeats it every 5 s while the condition lasts, locks them out, logs it (with a camera
 clip), and only lets the user reset once the rule no longer trips. A rule that throws fails safe (trip).
+A trip that cannot clear by itself (a volume that only grows) gives the rule an `onReset` that the reset
+applies, e.g. Dispensed back to 0 (`reglo-icc/safety.ts`).
 
 **Principles** — every rule in this folder follows them; keep to them in new ones:
 
-1. **Act on readings, not on what the app switched on.** The keypad can start a unit too (see `heating()` in `ret-control-visc/safety.ts`).
+1. **Act on readings, not on what the app switched on.** The keypad can start a unit too: judge "running" from a reading as well as the switch (see `heating()` in `ret-control-visc/safety.ts`, speed in the EUROSTAR torque rule, the pump's running reply in *Dose only while stirring*).
+   A reading that is missing for one poll (a failed read is `undefined`) is not a change and not "safe": skip it in history, and if a rule depends on a reading, have a rule that trips when it stays missing while running (RET *Plate reading*).
 2. **A rule may only add trips.** Keep simple static limits as the floor and put cleverer rules on top, so a wrong guess can cause a false trip but never a missed one.
 3. **Explain yourself.** `why` says what goes wrong; every status line has the numbers and the threshold ("Plate 112 °C · stops above 150 °C"), so anyone can see how close it is.
 4. **Don't trip on one reading.** Require a few seconds (`history`) unless one reading is already conclusive.

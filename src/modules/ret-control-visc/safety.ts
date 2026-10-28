@@ -12,7 +12,7 @@ import type { DeviceSnapshot, ModuleSafety, RuleContext, RuleStatus, SafetyRule,
 //   turns off (switches), what the user may tune (settings), and evaluate(), which returns a live
 //   status every poll. Returning state 'trip' is all a rule does; the core switches off, latches and
 //   locks out (src/core/device.ts, checkSafety).
-// - Static rules (1, 2) are the floor. Dynamic rules (3–6) may only ADD trips, never loosen 1 and 2,
+// - Static rules (1, 2, and 5b which keeps them seeing) are the floor. Dynamic rules (3–6) may only ADD trips, never loosen 1 and 2,
 //   so a wrong guess in a dynamic rule can only cause a false trip, never a missed one.
 // - Rules act on READINGS, not on what the app thinks it switched on: heating started on the keypad
 //   is caught too (see heating()).
@@ -160,7 +160,8 @@ const probeDrop: SafetyRule = {
     if (probe === undefined || sp === undefined) return { state: 'idle', text: 'Waiting for probe and setpoint' };
     if (!heating(ctx)) return { state: 'idle', text: 'Not heating' };
     const span = history.filter((x) => now - x.t <= DROP_WINDOW_S * 1000);
-    if (!span.every((x) => x.setpoints.temp === sp)) return { state: 'idle', text: 'Setpoint just changed' };
+    // A sample whose setpoint read failed (undefined) says nothing about a change: skip it.
+    if (!span.every((x) => x.setpoints.temp === undefined || x.setpoints.temp === sp)) return { state: 'idle', text: 'Setpoint just changed' };
     const peak = Math.max(...span.map((x) => probeOf(x.values) ?? -Infinity), probe);
     const drop = peak - probe;
     if (drop >= set.probeDrop && probe < sp - 5) {
@@ -197,6 +198,31 @@ const probeLost: SafetyRule = {
   },
 };
 
+// ── 5b. Plate reading lost while heating (static) ────────────────────────────────────────────────
+// Rules 1 and 2 need the plate reading: without it they can only say "no plate reading". The unit
+// can keep answering other reads while IN_PV_2 fails, so this one stops the heater instead.
+const plateLost: SafetyRule = {
+  key: 'plateLost',
+  label: 'Plate reading',
+  required: true, // without it rules 1 and 2 are blind
+  why: 'The plate maximum and plate-above-setpoint rules work on the plate reading. If the unit stops reporting it while the heater is on, they cannot see the plate, so the heater goes off.',
+  switches: ['heater'],
+  evaluate({ s, mem, now }) {
+    if (s.values.plate !== undefined) {
+      mem.missingSince = undefined;
+      return { state: 'ok', text: `Plate reading ${r1(s.values.plate)} °C` };
+    }
+    if (!s.switches.heater) {
+      mem.missingSince = undefined;
+      return { state: 'idle', text: 'No plate reading (heater off)' };
+    }
+    const since = (mem.missingSince as number | undefined) ?? now;
+    mem.missingSince = since;
+    if (now - since >= LOST_AFTER_S * 1000) return { state: 'trip', text: `Plate reading lost for ${Math.round((now - since) / 1000)} s with the heater on` };
+    return { state: 'near', text: `Plate reading missing for ${Math.round((now - since) / 1000)} s · stops at ${LOST_AFTER_S} s` };
+  },
+};
+
 // ── 6. Steady plate–probe gap (dynamic, learns) ───────────────────────────────────────────────────
 const steadyGap: SafetyRule = {
   key: 'steadyGap',
@@ -208,18 +234,24 @@ const steadyGap: SafetyRule = {
     const plate = s.values.plate;
     const probe = probeOf(s.values);
     const sp = s.setpoints.temp;
+    // A failed read (any of them undefined) changes nothing: keep what was learned and wait.
+    if (plate === undefined || probe === undefined || sp === undefined) return { state: 'idle', text: 'Waiting for plate, probe and setpoint' };
     let learned = mem.learned as { sp: number; gap: number } | undefined;
     if (learned && learned.sp !== sp) learned = mem.learned = mem.overSince = undefined;
-    if (plate === undefined || probe === undefined || sp === undefined) return { state: 'idle', text: 'Waiting for plate, probe and setpoint' };
-    // Learn: probe within ±1.5 °C of the setpoint for the last 3 min, setpoint unchanged.
-    const span = history.filter((x) => now - x.t <= LEARN_S * 1000);
+    // Learn: probe within ±1.5 °C of the setpoint for 3 min, setpoint unchanged. Samples with a failed
+    // read are skipped, not counted as a break; the history kept reaches well past 3 min (historyS).
     let heldMs = 0;
-    for (let i = span.length - 1; i >= 0; i--) {
-      const p = probeOf(span[i].values);
-      if (span[i].setpoints.temp !== sp || p === undefined || span[i].values.plate === undefined || Math.abs(p - sp) > LEARN_BAND) break;
-      heldMs = now - span[i].t;
+    let from = history.length;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const x = history[i];
+      if (x.setpoints.temp === undefined || x.values.plate === undefined || probeOf(x.values) === undefined) continue;
+      if (x.setpoints.temp !== sp || Math.abs(probeOf(x.values)! - sp) > LEARN_BAND) break;
+      heldMs = now - x.t;
+      from = i;
+      if (heldMs >= LEARN_S * 1000) break;
     }
-    if (heldMs >= (LEARN_S - 2) * 1000) {
+    if (heldMs >= LEARN_S * 1000) {
+      const span = history.slice(from).filter((x) => x.values.plate !== undefined && probeOf(x.values) !== undefined);
       const g = median(span.map((x) => x.values.plate! - probeOf(x.values)!));
       if (!learned || g < learned.gap) learned = mem.learned = { sp, gap: g };
     }
@@ -290,6 +322,6 @@ const stirringLost: SafetyRule = {
 
 export const retSafety: ModuleSafety = {
   historyS: 600, // the longest window any rule uses: probe response, up to 10 min
-  rules: [plateMax, plateAboveSetpoint, probeResponse, probeDrop, probeLost, steadyGap, stirringLost],
+  rules: [plateMax, plateAboveSetpoint, plateLost, probeResponse, probeDrop, probeLost, steadyGap, stirringLost],
   summary: (s, set) => `Plate cut-off ${plateCutoff(s, set)} °C`,
 };

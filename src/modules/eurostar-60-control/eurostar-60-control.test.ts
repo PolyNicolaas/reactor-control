@@ -60,6 +60,13 @@ describe('EUROSTAR safety: torque limit', () => {
     expect(hit.t).toBe(13);
   });
 
+  it('also watches a motor started on the keypad (speed reading), but not a stopped one', () => {
+    const keypad = (t: number) => snap({ torque: t < 10 ? 10 : 35, speed: 300 }, {}, { motor: false });
+    expect(runSafety(eurostarSafety, keypad, 30, { on: ['torque'], set: { torqueMax: 30 } }).rule).toBe('torque');
+    const stopped = () => snap({ torque: 35, speed: 0 }, {}, { motor: false });
+    expect(runSafety(eurostarSafety, stopped, 30, { on: ['torque'], set: { torqueMax: 30 } }).rule).toBeUndefined();
+  });
+
   it('a jammed shaft on the simulator trips it and stops the motor', async () => {
     const dev = new DeviceInstance('st', eurostar60, 'Stirrer', '#000', eurostar60.simulate(), 100);
     dev.setRuleOn('torque', true);

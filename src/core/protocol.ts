@@ -20,6 +20,11 @@ export interface Protocol {
   caseSensitive: boolean;
   /** For the bench terminal: does this raw command expect a reply? */
   expectsReply(cmd: string): boolean;
+  /**
+   * Does this reply belong to this command? Replies carry no request id, so a late reply or an echo
+   * could otherwise be taken as the answer to the next command and shift every reading by one.
+   */
+  replyFits(cmd: string, reply: string): boolean;
   /** Throws a readable error if the reply to a write means it was refused. */
   checkAck(cmd: string, reply: string | null): void;
   /** Quick buttons in the bench terminal. */
@@ -45,6 +50,13 @@ export const NAMUR: Protocol = {
   acked: false,
   caseSensitive: false,
   expectsReply: (cmd) => /^IN_/i.test(cmd.trim()),
+  // IN_PV_4 / IN_SP_4 are answered "value 4": the channel at the end must match.
+  replyFits: (cmd, reply) => {
+    const m = /^IN_(?:PV|SP)_(\d+)$/i.exec(cmd.trim());
+    if (!m) return !/^(OUT_|START_|STOP_|RESET)/i.test(reply.trim()); // an echoed write is never a reply
+    const toks = reply.trim().split(/\s+/);
+    return toks.length < 2 || !/^\d+$/.test(toks[toks.length - 1]) || Number(toks[toks.length - 1]) === Number(m[1]);
+  },
   checkAck: () => {},
   benchCommands: ['IN_NAME', 'IN_PV_5', 'IN_PV_80', 'IN_PV_90', 'IN_SP_1', 'IN_SP_4', 'IN_SOFTWARE'],
   benchHint: 'Commands starting with IN_ wait for a reply; others are sent without one.',
@@ -59,6 +71,7 @@ export const ISMATEC: Protocol = {
   acked: true,
   caseSensitive: true,
   expectsReply: () => true,
+  replyFits: () => true,
   checkAck: (cmd, reply) => {
     const r = (reply ?? '').trim();
     if (r === '#') throw new Error(`Pump refused "${cmd}"`);

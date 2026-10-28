@@ -85,6 +85,33 @@ describe('RET safety: dynamic rules', () => {
     expect(hit.text).toMatch(/held the setpoint at 12 °C/);
   });
 
+  it('Plate reading: a lost plate reading with the heater on trips after 10 s; heater off never trips', () => {
+    const lost = runSafety(retSafety, (t) => snap({ plate: t < 60 ? 100 : undefined, probe: 40 }, { temp: 120 }, { heater: true }), 200);
+    expect(lost.rule).toBe('plateLost');
+    expect(lost.t).toBe(70);
+    const off = runSafety(retSafety, (t) => snap({ plate: t < 60 ? 100 : undefined, probe: 40 }, { temp: 120 }, { heater: false }), 200);
+    expect(off.rule).toBeUndefined();
+  });
+
+  it('one failed setpoint read does not blind Probe drop or make Steady gap relearn', () => {
+    // Probe pulled out at 300 s, one IN_SP_1 timeout at 290 s: still trips within seconds.
+    const drop = runSafety(retSafety, (t) => snap({ plate: 135, probe: t < 300 ? 120 : Math.max(25, 120 - (t - 300) * 0.5) }, { temp: t === 290 ? undefined : 120 }, { heater: true }), 600);
+    expect(drop.rule).toBe('probeDrop');
+    expect(drop.t).toBeLessThan(330);
+    // Boiling dry, with one failed setpoint read at 700 s: trips as early as without it.
+    const plate = (t: number) => (t < 600 ? 132 : Math.min(149, 132 + (t - 600) * 0.1));
+    const clean = runSafety(retSafety, (t) => ret(plate(t), 120, 120), 1500);
+    const gappy = runSafety(retSafety, (t) => snap({ plate: plate(t), probe: 120 }, { temp: t === 700 ? undefined : 120 }, { heater: true }), 1500);
+    expect(gappy.rule).toBe('steadyGap');
+    expect(gappy.t).toBe(clean.t);
+  });
+
+  it('Steady gap still learns when polls are 3 s apart', () => {
+    const slow = (t: number) => (t % 3 === 0 ? ret(132, 120, 120) : snap({}, {}, { heater: true }));
+    const r = runSafety(retSafety, slow, 399, { only: ['steadyGap'] }); // ends on a poll
+    expect(r.statuses.steadyGap.text).toMatch(/learned 12 °C/);
+  });
+
   it('every rule reports a live status line', () => {
     const r = runSafety(retSafety, () => ret(60, 55, 60), 10);
     for (const rule of retSafety.rules) expect(r.statuses[rule.key]?.text, rule.key).toBeTruthy();

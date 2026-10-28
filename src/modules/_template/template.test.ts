@@ -32,6 +32,15 @@ describe('template safety rules', () => {
     expect(runSafety(templateSafety, heating, 5).statuses.stirring.text).toBe('no peer');
     const hit = runSafety(templateSafety, heating, 30, { peers: (t) => [peer({ provides: ['stirrer'], active: { stirring: t < 10 } })] });
     expect(hit.rule).toBe('stirring');
-    expect(hit.t).toBe(10);
+    expect(hit.t).toBe(15); // stirring stopped at 10 s, held 5 s
+  });
+
+  it('Heat only while stirring does not trip on one missed stirring reading, and sees keypad heating', () => {
+    const heating = () => snap({ temp: 60 }, {}, { heater: true });
+    const blip = runSafety(templateSafety, heating, 30, { peers: (t) => [peer({ provides: ['stirrer'], active: { stirring: t !== 10 } })] });
+    expect(blip.rule).toBeUndefined();
+    // Heater switch off in the app, but the block is warming: heating started on the unit.
+    const keypad = runSafety(templateSafety, (t) => snap({ temp: 30 + t }, {}, { heater: false }), 30, { peers: () => [peer({ provides: ['stirrer'] })] });
+    expect(keypad.rule).toBe('stirring');
   });
 });
