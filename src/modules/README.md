@@ -79,12 +79,12 @@ groups: [{ key: 'heating', label: 'Heating' }, { key: 'stirring', label: 'Stirri
 readings: [{ key: 'probe', …, group: 'heating' }, { key: 'speed', …, group: 'stirring' }],
 ```
 
-The card draws one section per function holding everything about it — readings, setpoint with
-set-vs-actual, its switch, its safety rules (a rule joins the function of the switch it stops, or set
+The card draws one row per function holding everything about it — name and switch, readings, setpoint with
+set-vs-actual, its safety rules (a rule joins the function of the switch it stops, or set
 `group` on the rule), caution lists (`group` on the list), and *Watched by*. Methods address a function
 (`heater` role → *Hotplate › Heating*), so keep function keys stable once used. Repeated channels of the
 same kind (pump channels) set `channel: true`: the user can rename them and their names prefix labels on
-the chart and in recordings. Anything left without a function goes into a last "Unit" section.
+the chart and in recordings. Anything left without a function goes into a last "Unit" row.
 
 ## Safety rules
 

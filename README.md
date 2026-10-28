@@ -27,7 +27,7 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 ## What works now
 
 - Add, remove and reorder units on the control page (real units over USB, or simulated units for testing). The page is saved in the browser and restored on reload.
-- One compact card per unit, side by side, built from its module and **grouped by function** (Heating, Stirring, Weighing; each pump channel): each section has its live readings, setpoint with read-back from the unit ("Set · actual"), on/off switch (clearly ON or OFF), its **safety rules** live with on/off and settings, and *Watched by* when another unit's rules depend on it. Pump channels can be named.
+- One full-width card per unit, built from its module, with **one row per function** (Heating, Stirring, Weighing; each pump channel): each row has its live readings, setpoint with read-back from the unit ("Set · actual"), on/off switch (clearly ON or OFF), its **safety rules** live with on/off and settings, and *Watched by* when another unit's rules depend on it. Pump channels can be named.
 - **STOP ALL** stops every unit. Removing a unit stops it before handing it back to local control.
 - Live chart: one lane per unit on a shared time axis; time range, lane and channel filters.
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).

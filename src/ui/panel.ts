@@ -193,12 +193,12 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     const section = h(
       'section',
       { class: 'fn', 'data-fn': f.key },
-      h('header', { class: 'fn-head' }, h('span', { class: 'dot', 'aria-hidden': 'true' }), title, sws.length ? h('div', { class: 'fn-switches' }, ...sws) : false),
-      tiles.length ? h('div', { class: 'tiles' }, ...tiles) : false,
-      ...sps,
-      rb ? rb.el : false,
-      ...cbs.map((c) => c.el),
-      wb.el,
+      // One row per function (D57): name and switch | values | setpoints | safety, cautions, watched by.
+      // Every column is always there (empty or not) so the columns line up from row to row.
+      h('header', { class: 'fn-head' }, h('span', { class: 'fn-name' }, h('span', { class: 'dot', 'aria-hidden': 'true' }), title), sws.length ? h('div', { class: 'fn-switches' }, ...sws) : false),
+      h('div', { class: 'fn-values' }, tiles.length ? h('div', { class: 'tiles' }, ...tiles) : false),
+      h('div', { class: 'fn-set' }, ...sps),
+      h('div', { class: 'fn-extra' }, rb ? rb.el : false, ...cbs.map((c) => c.el), wb.el),
     );
     groupEls[f.key] = section;
     return section;

@@ -1,6 +1,6 @@
 # Reactor Control — project design
 
-**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-27 (method format 0.2 step-based; editor D restyled; status and next steps in §10).
+**Living document.** It must describe the app as it is in `main` right now. Every change to the code updates this file in the same commit (see [Keeping this document current](#keeping-this-document-current)). Last reviewed: 2026-10-28 (each function is a row in a full-width card, D57).
 
 Related: [README](../README.md) (setup, development, code map) · [MODULES.md](MODULES.md) (supported devices) · [method-format.md](method-format.md) (draft method format) · [manuals/](manuals/README.md) (device notes)
 
@@ -163,6 +163,7 @@ Newest last. Each has a date and a short reason. Change a decision by adding a n
 | D54 | 2026-10-27 | **Dose X mL at Y mL/min**: the step goes on when the volume is in (app's count now; the pump's own Volume mode after a bench test). **Time axis** = planned length + 25 %, growing by 25 % only when passed | Exact volumes whatever interrupts the dose; edit and run views line up and rarely rescale |
 | D55 | 2026-10-27 | **Streamlined device cards**: cards are narrow columns side by side (≥ 340 px each); functions stack inside a card as compact blocks with a divider; values are one row of numbers with small labels (no tiles); each setpoint is one line (label · value · unit · **Set**) with set-vs-actual under it; on/off functions are **switches** that show ON (green track, green-tinted, the section gets a green edge) or OFF (grey) — locked ones get a red dashed border; safety rule toggles show ON/OFF in the track. Supersedes the wide card layout of D47 (the grouping by function stays) | User feedback: cards too wide and roomy, on/off state hard to see |
 | D56 | 2026-10-27 | **Method file format 0.2 is step-based** (`steps` with `do` per role and one `goOnWhen`), replacing the 0.1 draft's per-role `lanes` joined by gates and separate `prompts`. Example in `examples/methods/`; the 0.1 example is kept for reference | Follows the chosen editor (D50) and "every change is a step boundary" (D53): the file reads like the table, one list instead of parallel lanes |
+| D57 | 2026-10-28 | **Each function is a row**: cards are full width, one under the other; inside a card each function (Heating, Stirring, Weighing, each pump channel) is one row with four aligned columns — name and on/off switch · live values · setpoints with set-vs-actual · safety rules, cautions and *Watched by*. Below 1100 px the safety column moves under values and setpoints; on a phone the row stacks. Supersedes D55's narrow side-by-side columns (the compact values, one-line setpoints and switches of D55 stay) | User feedback: a row per function reads cleaner, and rows line up across devices |
 
 ## 6. Methods (designed, not built)
 
@@ -236,7 +237,7 @@ Decided to add a camera (D18); model not chosen (options: USB webcams such as th
 
 ## 10. Roadmap
 
-**Where we left off (2026-10-27):** the app has modules with live safety rules, cards grouped by function with on/off switches (D42–D47, D55). Methods are fully designed and prototyped (D50–D56) but not in the app. **Next:** build the method editor and run engine from board D into the app (item 5), after or alongside the reaction record (items 1–2).
+**Where we left off (2026-10-28):** the app has modules with live safety rules, full-width cards with one row per function and on/off switches (D42–D47, D55, D57). Methods are fully designed and prototyped (D50–D56) but not in the app. **Next:** build the method editor and run engine from board D into the app (item 5), after or alongside the reaction record (items 1–2).
 
 1. **Reaction session**: reaction ID, always-on record in IndexedDB, source on every change, two-stage Stop (Resume / Reaction complete).
 2. **Package and outbox**: as-run method from setpoints, outbox folder writer, zip fallback.
