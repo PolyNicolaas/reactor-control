@@ -45,9 +45,12 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
 
   // Close the menu after any choice, and when clicking anywhere else.
   menu.querySelector('.menu-items')!.addEventListener('click', () => (menu.open = false));
-  document.addEventListener('click', (e) => {
+  // Removed again once the card leaves the page, so removed cards are not kept alive by the listener.
+  const onDocClick = (e: MouseEvent) => {
+    if (!el.isConnected && !app.devices.includes(dev)) return document.removeEventListener('click', onDocClick);
     if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
-  });
+  };
+  document.addEventListener('click', onDocClick);
 
   const tileFor = (r: (typeof d.readings)[number]) => {
       const v = h('span', { class: 'tile-value' }, '—');
@@ -90,7 +93,8 @@ export function devicePanel(app: App, dev: DeviceInstance, onReconnect: (dev: De
     const read = h('span', { class: 'sp-read' });
     spReadEls[sp.key] = read;
     const apply = async () => {
-      const value = Number(input.value);
+      // An empty box would read as 0 (Number('') === 0) and send 0 to the unit.
+      const value = input.value.trim() === '' ? NaN : Number(input.value);
       try {
         dev.checkSetpoint(sp.key, value);
         const current = dev.snapshot.setpoints[sp.key];
@@ -435,7 +439,7 @@ function cautionBlock(app: App, dev: DeviceInstance, c: CautionList): { el: HTML
               title: `Set "${st.label}" to ${capV} ${st.unit} (${c.cap.margin} ${st.unit} below ${it.name})`,
               onclick: () => {
                 if (!confirm(`Set "${st.label}" for ${dev.label} to ${capV} ${st.unit}, ${c.cap!.margin} ${st.unit} below the autoignition temperature of ${it.name}?`)) return;
-                dev.safetySettings[c.cap!.setting] = capV;
+                dev.setSafetySetting(c.cap!.setting, capV); // same path as typing it: clamped, saved, re-drawn
                 app.change(`${dev.label}: ${st.label.toLowerCase()} set to ${capV} ${st.unit} for ${it.name}`);
                 app.save();
                 toast(`${st.label}: ${capV} ${st.unit}`);
@@ -564,7 +568,7 @@ function rulesBlock(app: App, dev: DeviceInstance, rules: SafetyRule[]): { el: H
       row.chip.title = STATE_HINT[state];
       row.text.textContent = dev.tripped[row.rule.key] ?? st.text;
       row.toggle.checked = on;
-      for (const [k, i] of Object.entries(row.inputs)) if (document.activeElement !== i) i.value = String(set[k]);
+      for (const [k, i] of Object.entries(row.inputs)) if (document.activeElement !== i) i.value = set[k] === undefined ? '' : String(set[k]);
       if (row.watches) {
         const peers = dev.peers().filter((p) => p !== dev && (p.driver.provides ?? []).includes(row.rule.withPeer!));
         row.watches.textContent = peers.length

@@ -72,3 +72,22 @@ describe('device card: rule rows and Watched by', () => {
     for (const dev of [...app.devices]) await app.removeDevice(dev);
   });
 });
+
+describe('device card: setpoints', () => {
+  it('an empty setpoint box is refused, not sent as 0', async () => {
+    const app = new App();
+    const hp = await app.addDevice({ model: 'retControlVisc', label: 'Hotplate', transport: drivers.find((d) => d.model === 'retControlVisc')!.simulate() });
+    const card = devicePanel(app, hp, () => {});
+    await wait(1300);
+    card.update();
+    const sent: number[] = [];
+    const orig = hp.setSetpoint.bind(hp);
+    hp.setSetpoint = async (k, v) => { sent.push(v); return orig(k, v); };
+    const row = card.el.querySelector<HTMLElement>('[data-fn="heating"] .sp-row')!;
+    row.querySelector<HTMLInputElement>('input')!.value = '';
+    row.querySelector<HTMLButtonElement>('.sp-apply')!.click();
+    await wait(50);
+    expect(sent).toEqual([]);
+    for (const dev of [...app.devices]) await app.removeDevice(dev);
+  }, 15000);
+});
