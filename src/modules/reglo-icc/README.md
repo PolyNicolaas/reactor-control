@@ -17,7 +17,10 @@ Manual facts with pages: [`docs/manuals/reglo-icc/notes.md`](../../../docs/manua
 - **No unsolicited messages** (`1xE0`): they would be mistaken for replies.
 - **Flow-rate mode on every channel**; the pump converts mL/min to rpm with the tubing ID set on the pump, so that setting must match the tubing.
 - **No flow sensor**: "Flow" is the set rate while running, "Dispensed" the app's integral of it — an estimate until the channel is calibrated.
-- **Direction is not changed by the app**; set it on the pump.
+- **Direction is not changed by the app**; set it on the pump. It is read (`nxD`) and recorded per channel, because a reversed channel pulls from the flask into the reagent bottle.
+- **The flow setpoint is capped by the pump's own maximum** for each channel (`n?`, a hidden reading, `maxKey` on the setpoint). The manual's tubing chart is for 8 rollers; ours has 12, so a fixed table would be wrong.
+- **The pump's own keys stay on** (`1B` would lock them, maybe including Run/Stop, the only stop at the pump).
+- **Not bench-tested yet.** The bench plan, open questions (above all: does `1E` cover the whole pump?) and features worth adding (pump-side dispensed volume, per-channel events, Volume mode) are in [`notes.md`](../../../docs/manuals/reglo-icc/notes.md).
 - **`provides: ['pump', 'dosing']`**.
 
 ## Safety rules

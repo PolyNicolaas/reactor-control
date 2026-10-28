@@ -1,7 +1,8 @@
 import type { Transport } from '../../core/types';
 import { sleep } from '../../core/serialTransport';
 
-// Max flow (mL/min) per tubing inner diameter (mm) at 100 rpm, from the manual's chart (p. 16).
+// Max flow (mL/min) per tubing inner diameter (mm) at 100 rpm, from the manual's chart (p. 16). That chart
+// is for 8 rollers; our unit has 12, so the real numbers are lower. Replace them with `n?` replies from the bench.
 const MAX_FLOW: [number, number][] = [[0.76, 3.6], [1.02, 6.3], [1.52, 13], [2.06, 20], [2.54, 27], [3.17, 35]];
 const maxFlowFor = (id: number) => (MAX_FLOW.find(([d]) => d >= id - 0.005) ?? MAX_FLOW[MAX_FLOW.length - 1])[1];
 
@@ -52,7 +53,9 @@ export class RegloSimTransport implements Transport {
       return `${mant.replace('.', '')}E${Number(e) < 0 ? '-' : '+'}${Math.abs(Number(e))}`;
     };
 
-    if (rest === '#') return 'REGLO ICC 0208 406';
+    // Model, software version, head code: 4 channels, 12 rollers (ref 6.22, p. 24). Exact text: bench.
+    if (rest === '#') return 'REGLO ICC 0114 0412';
+    if (rest === 'xB') return '12';
     if (rest === '(') return '0208';
     if (rest === '~') return this.channelAddressing ? '1' : '0';
     if (rest === '~1' || rest === '~0') {

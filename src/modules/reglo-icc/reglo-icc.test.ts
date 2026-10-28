@@ -54,9 +54,19 @@ describe('Reglo ICC driver against the simulator', () => {
     await dev.disconnect(true);
   });
 
+  it('reads each channel\'s maximum flow from the pump and refuses a setpoint above it', async () => {
+    const { dev } = await connect();
+    await wait(400); // first poll reads n? and nxD
+    expect(dev.snapshot.values.maxflow2).toBe(3.6); // sim ch2: 0.76 mm tubing
+    expect(() => dev.checkSetpoint('flow2', 5)).toThrow(/0\.001–3\.6 mL\/min \(the most the unit can do/);
+    expect(dev.checkSetpoint('flow2', 3)).toBe(3);
+    expect(dev.snapshot.values.dir1).toBe(1); // J = clockwise
+    await dev.disconnect(true);
+  });
+
   it('reports a refused start (flow above what the tubing allows)', async () => {
     const { dev } = await connect();
-    await dev.setSetpoint('flow2', 5); // sim ch2 tubing 0.76 mm, max 3.6 mL/min
+    await dev.raw('2f5000+0'); // 5 mL/min typed in the bench terminal (sim ch2 tubing 0.76 mm, max 3.6 mL/min)
     await expect(dev.setSwitch('run2', true)).rejects.toThrow(/can't run "2H"/);
     expect(dev.snapshot.switches.run2).toBe(false);
     await dev.disconnect(false);

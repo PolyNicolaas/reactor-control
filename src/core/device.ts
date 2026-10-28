@@ -628,9 +628,12 @@ export class DeviceInstance {
     const sp = this.driver.setpoints.find((s) => s.key === key);
     if (!sp) throw new Error(`No setpoint ${key}`);
     if (!Number.isFinite(value)) throw new Error('Enter a number');
-    const max = Math.min(sp.max, this.limits[key] ?? sp.max);
+    const unitMax = sp.maxKey ? this.snapshot.values[sp.maxKey] : undefined;
+    const capByUnit = unitMax !== undefined && Number.isFinite(unitMax) && unitMax > 0 && unitMax < Math.min(sp.max, this.limits[key] ?? sp.max);
+    const max = capByUnit ? unitMax! : Math.min(sp.max, this.limits[key] ?? sp.max);
     if (value < sp.min || value > max) {
-      throw new Error(`${sp.label} must be ${sp.min}–${max} ${sp.unit}${max < sp.max ? ' (your limit)' : ''}`);
+      const why = capByUnit ? ' (the most the unit can do with its current settings)' : max < sp.max ? ' (your limit)' : '';
+      throw new Error(`${sp.label} must be ${sp.min}–${max} ${sp.unit}${why}`);
     }
     return Number(value.toFixed(sp.decimals));
   }

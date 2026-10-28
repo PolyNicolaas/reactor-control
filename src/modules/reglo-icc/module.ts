@@ -22,7 +22,10 @@ import { RegloSimTransport } from './sim';
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const CHANNELS = 4;
-const MAX_FLOW = 35; // mL/min, largest tubing (3.17 mm ID), manual p. 16. Smaller tubing allows less; the pump refuses more.
+// mL/min: the most any tubing gives (3.17 mm ID at 100 rpm) in the manual's chart, p. 16. That chart is for
+// an 8-roller head; ours has 12 rollers, which moves less per turn. The real limit per channel is read
+// from the pump (`n?`, maxflow below) and caps the setpoint as soon as it is known.
+const MAX_FLOW = 35;
 
 const chans = Array.from({ length: CHANNELS }, (_, i) => i + 1);
 const g = (n: number) => `ch${n}`;
@@ -32,7 +35,15 @@ const readings: ReadingSpec[] = [
     { key: `flow${n}`, label: 'Flow', unit: 'mL/min', chart: true, primary: true, group: g(n) },
     { key: `dispensed${n}`, label: 'Dispensed', unit: 'mL', group: g(n) },
     // Reply "3.17 mm" (manual p. 29). Changes only when someone swaps tubing, so polled every 10 s.
+    // The pump turns mL/min into turns using this setting: if it does not match the tubing fitted,
+    // every flow and every Dispensed is wrong by roughly (actual ID / set ID)².
     { key: `tubing${n}`, label: 'Tubing ID', unit: 'mm', cmd: `${n}+`, everyN: 10, group: g(n) },
+    // "Max flow rate achievable with current settings" (ref 3.23, p. 23): depends on tubing, rollers and
+    // calibration. Caps the flow setpoint (maxKey). Reply format is "Text"; bench-check it (notes.md).
+    { key: `maxflow${n}`, label: 'Max flow', unit: 'mL/min', cmd: `${n}?`, everyN: 10, hidden: true, group: g(n) },
+    // Rotation direction, J = clockwise (1), K = counter-clockwise (-1) (ref 2.4, p. 22, 27). Recorded so a
+    // run shows which way each channel turned; the app never changes it (a reversed channel pulls from the flask).
+    { key: `dir${n}`, label: 'Direction', unit: '1=CW/-1=CCW', cmd: `${n}xD`, everyN: 10, hidden: true, group: g(n) },
   ]),
   // Pump-wide "is anything running": + / - (manual p. 24, ref 6.21). Catches stops made on the pump.
   { key: 'running', label: 'Pump running', unit: '0/1', cmd: '1E', hidden: true },
@@ -43,7 +54,7 @@ const setpoints: SetpointSpec[] = chans.map((n) => ({
   min: 0.001, max: MAX_FLOW, step: 0.01, decimals: 3,
   // The pump keeps 4 significant figures (12.345 is stored as 12.35), so allow a small relative error.
   tolerance: 0.0005, toleranceRel: 0.002,
-  actualKey: `flow${n}`, group: g(n),
+  actualKey: `flow${n}`, maxKey: `maxflow${n}`, group: g(n),
 }));
 
 const switches: SwitchSpec[] = chans.map((n) => ({ key: `run${n}`, label: 'Pump', on: `${n}H`, off: `${n}I`, group: g(n) }));
@@ -95,6 +106,8 @@ export const regloIcc: DeviceDriver = {
     const r = reply.trim();
     if (r === '+') return 1;
     if (r === '-') return 0;
+    if (r === 'J') return 1;  // direction: clockwise
+    if (r === 'K') return -1; // counter-clockwise
     return parseVolumeType1(r) ?? parseNumber(r);
   },
   derive: (s, dt) => {

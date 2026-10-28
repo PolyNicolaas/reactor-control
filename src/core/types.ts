@@ -66,6 +66,11 @@ export interface SetpointSpec {
   band?: number;
   /** Seconds the actual may take to start moving after a start or a change before it counts as "not following" (default 8). */
   graceS?: number;
+  /**
+   * A reading that caps this setpoint while it has a value: the unit's own "most it can do right now"
+   * (e.g. the pump's maximum flow for the tubing fitted). Setpoints above it are refused with a clear message.
+   */
+  maxKey?: string;
   group?: string;
 }
 

@@ -85,7 +85,7 @@
           "edition": "rev. C",
           "language": "EN",
           "pages": 36,
-          "interfacePages": "17-33",
+          "interfacePages": "17-33 (whole manual reviewed 2026-10-28)",
           "file": "Reglo_ICC_operating_manual_14-036-E_revC.pdf",
           "url": "https://github.com/numat/ismatec/raw/master/doc/14-036-e-ismatec-reglo-icc-english-revc.pdf",
           "sha256": "c54f492a7ffee366d98f4f8d3d25b989614ecc51ad89e59a1d207420d5719536",
@@ -97,7 +97,7 @@
         "https://github.com/numat/ismatec",
         "search: Reglo ICC RS232 command set manual pdf"
       ],
-      "lastFeatureReview": "2026-10-22"
+      "lastFeatureReview": "2026-10-28"
     },
     {
       "id": "usb-camera",
