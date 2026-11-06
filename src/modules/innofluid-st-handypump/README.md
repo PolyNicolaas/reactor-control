@@ -26,6 +26,9 @@ covers both Innofluid modules: which adapter to buy or build, how to daisy-chain
   the address; Auto-detect does not try Modbus (a Modbus pump has no name to report).
 - **mL per revolution** (setting on *Volume limit*, default 1.22 = 25# tubing at its maximum): the sheet has no
   tubing or flow register. The default makes Dispensed read high, so the limit stops early until calibrated.
+- **Dispensed errs high, never low** (`pumpVolume` in `../shared/innofluid/pumpSafety.ts`): a failed speed read uses
+  the last speed; time is counted while the pump runs now or ran at the previous poll, across gaps with no replies;
+  a "stopped" reply switches the card off only on two polls in a row while it is on (one poll can race a start).
 - **Speed max 300 rpm** from the HandyPump datasheet (the generic sheet says 600).
 - **Running is read** from register 1000 every poll. Whether the pump answers reads is not shown in the sheet —
   the first bench check. Without it, *Run reading* stops the pump after 10 s.

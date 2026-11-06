@@ -22,6 +22,7 @@ Manual facts: [`docs/manuals/innofluid-labv1/notes.md`](../../../docs/manuals/in
 - **Flow setpoint in mL/min** (1004). The pump uses its head, tubing and its own calibration (Test/CAL on the pump),
   so calibrate on the pump; the app reads back the speed it chose (1002).
 - **Flow 0.01–645 mL/min** on the card (EasyPump III per the quote; the register sheet says 0.1 minimum — bench).
+- **Dispensed errs high, never low**, as for the ST-HandyPump (`pumpVolume`, shared).
 - **Running is read** (1008) every poll; *Run reading* stops the pump if that stays missing.
 - **The pump answers "busy" in its menus**; the card shows *it only takes commands on its main screen*.
 - **Not used yet:** direction and full-speed writes, dosing by volume on the pump (1015, would keep dosing safe if

@@ -269,9 +269,11 @@ export class DeviceInstance {
     }
     this.failures = ok === 0 && fail > 0 ? this.failures + 1 : 0;
     this.responding = this.failures < 2;
+    // Time since the last poll the unit ANSWERED: a gap with no replies is handed to derive() whole when
+    // replies resume, so values integrated over time (a pump's Dispensed) do not skip it.
     const now = performance.now();
     const dt = (now - this.lastPoll) / 1000;
-    this.lastPoll = now;
+    if (this.responding) this.lastPoll = now;
     if (this.driver.derive && this.responding) {
       const before = { ...this.snapshot.switches };
       this.driver.derive(this.snapshot, dt, this.safetyValues());

@@ -115,6 +115,10 @@ export function decodeReply(cmdText: string, address: number, c: ModbusCommand, 
   const fn = request[1];
   if (reply[1] === (fn | 0x80)) throw new Error(`Pump ${address} refused ${cmdText}: ${exceptionText(reply[2])}`);
   if (reply[1] !== fn) throw new Error(`Reply to ${cmdText} has function ${reply[1]}, expected ${fn}`);
+  // The byte count must match what was asked: a late reply to another read cannot pass as this one.
+  if ((c.kind === 'read' || c.kind === 'readFloat') && reply[2] !== (c.kind === 'read' ? 2 : 4)) {
+    throw new Error(`Reply to ${cmdText} has ${reply[2]} data bytes, expected ${c.kind === 'read' ? 2 : 4}`);
+  }
   if (c.kind === 'read') return String((reply[3] << 8) | reply[4]);
   if (c.kind === 'readFloat') return tidyFloat(bytesFloat(reply, 3));
   // 06 echoes the whole request; 10 echoes address, function, register and count.
@@ -150,13 +154,17 @@ export class ModbusBus {
   private waiting?: { want: () => boolean; resolve: () => void };
   private chain: Promise<unknown> = Promise.resolve();
   private opening?: Promise<void>;
+  private closingDone?: Promise<void>;
   private closing = false;
+  /** A request timed out: its reply may still come, so wait for a quiet line before the next one. */
+  private stale = false;
+  private lastRx = 0;
 
   /** The bus for a port; every card on the same port gets the same one. */
-  static for(port: SerialPort, options: SerialOptions, timeoutMs = 500): ModbusBus {
+  static for(port: SerialPort, options: SerialOptions): ModbusBus {
     let b = buses.get(port);
     if (!b) {
-      b = new ModbusBus(port, options, timeoutMs);
+      b = new ModbusBus(port, options);
       buses.set(port, b);
     }
     return b;
@@ -165,7 +173,6 @@ export class ModbusBus {
   private constructor(
     readonly port: SerialPort,
     private options: SerialOptions,
-    private timeoutMs: number,
   ) {}
 
   /** Character time at this baud rate (11 bits per byte with parity), ms. */
@@ -174,6 +181,8 @@ export class ModbusBus {
   }
 
   async attach(user: ModbusTransport): Promise<void> {
+    // A card leaving may be closing the port right now: let it finish, then open again.
+    await this.closingDone;
     this.users.add(user);
     if (this.reader) return;
     this.opening ??= (async () => {
@@ -192,20 +201,37 @@ export class ModbusBus {
   async detach(user: ModbusTransport): Promise<void> {
     this.users.delete(user);
     if (this.users.size) return;
-    this.closing = true;
+    this.closingDone = this.shut();
     try {
-      await this.reader?.cancel();
+      await this.closingDone;
+    } finally {
+      this.closingDone = undefined;
+    }
+  }
+
+  /** Stop reading and close the port. The next attach opens it again. */
+  private async shut(): Promise<void> {
+    this.closing = true;
+    const r = this.reader;
+    this.reader = undefined;
+    try {
+      await r?.cancel();
     } catch {
       /* already closed */
     }
-    this.reader?.releaseLock();
-    this.reader = undefined;
+    try {
+      r?.releaseLock();
+    } catch {
+      /* already released */
+    }
     await this.readLoopDone?.catch(() => {});
     try {
       await this.port.close();
     } catch {
       /* unplugged */
     }
+    this.rx = [];
+    this.stale = false;
   }
 
   get attached(): number {
@@ -213,11 +239,13 @@ export class ModbusBus {
   }
 
   private async readLoop(): Promise<void> {
+    const reader = this.reader;
     try {
-      while (this.reader) {
-        const { value, done } = await this.reader.read();
+      while (reader && this.reader === reader) {
+        const { value, done } = await reader.read();
         if (done) break;
         if (!value) continue;
+        this.lastRx = Date.now();
         for (const b of value) this.rx.push(b);
         if (this.waiting?.want()) {
           const w = this.waiting;
@@ -228,16 +256,34 @@ export class ModbusBus {
     } catch (e) {
       this.onLog?.('info', `read error: ${(e as Error).message}`);
     }
-    if (!this.closing) for (const u of [...this.users]) u.onDisconnect?.();
+    if (this.closing || this.reader !== reader) return;
+    // The port stopped (unplugged, or a read error such as a parity error). Close it so the next card
+    // to attach (Reconnect) opens it afresh instead of finding a dead reader; tell every card on it.
+    this.reader = undefined;
+    try {
+      reader?.releaseLock();
+    } catch {
+      /* already released */
+    }
+    try {
+      await this.port.close();
+    } catch {
+      /* unplugged */
+    }
+    this.rx = [];
+    for (const u of [...this.users]) u.onDisconnect?.();
+    // Cards that lost the port no longer hold it; the next attach starts a fresh session.
+    this.users.clear();
   }
 
   /** Send one command to one pump and wait for its reply. One frame on the wire at a time. */
-  request(address: number, cmdText: string, log?: (dir: 'tx' | 'rx' | 'info', text: string) => void): Promise<string | null> {
+  request(address: number, cmdText: string, log?: (dir: 'tx' | 'rx' | 'info', text: string) => void, timeoutMs = 500): Promise<string | null> {
     const run = async (): Promise<string | null> => {
       const c = parseCommand(cmdText);
       const { frame, replyLength } = encodeRequest(address, c);
       // RTU frames are separated by at least 3.5 characters of silence; leave a little more.
       await sleep(Math.max(5, Math.ceil(this.charMs * 4)));
+      if (this.stale) await this.drain(timeoutMs);
       if (this.rx.length) {
         const junk = hex(this.rx);
         this.rx = [];
@@ -267,8 +313,9 @@ export class ModbusBus {
             this.waiting = undefined;
             const got = this.rx.length ? ` (got ${hex(this.rx)})` : '';
             this.rx = [];
+            this.stale = true; // its reply may still come: the next request waits for a quiet line
             reject(new Error(`No reply from pump ${address} to ${cmdText}${got}`));
-          }, this.timeoutMs);
+          }, timeoutMs);
           this.waiting = { want: done, resolve: () => { clearTimeout(t); resolve(); } };
         });
       }
@@ -276,13 +323,34 @@ export class ModbusBus {
       const reply = Uint8Array.from(this.rx.slice(0, n));
       this.rx = this.rx.slice(n);
       this.lastRawHex = hex(reply);
-      const text = decodeReply(cmdText, address, c, frame, reply);
+      let text: string;
+      try {
+        text = decodeReply(cmdText, address, c, frame, reply);
+      } catch (e) {
+        // A bad or mismatched reply means the line is out of step: settle it before the next request.
+        if (!/refused/.test((e as Error).message)) this.stale = true;
+        throw e;
+      }
       log?.('rx', `${text}  [${this.lastRawHex}]`);
       return text;
     };
     const p = this.chain.then(run, run);
     this.chain = p.catch(() => {});
     return p;
+  }
+
+  /**
+   * After a timeout or a garbled reply: wait until the line has been quiet for a while (at most one
+   * timeout) and drop whatever came, so a late reply is never taken as the answer to the next request.
+   */
+  private async drain(timeoutMs: number): Promise<void> {
+    const quietMs = Math.max(30, Math.ceil(this.charMs * 20));
+    const until = Date.now() + timeoutMs;
+    await sleep(quietMs);
+    while (Date.now() - this.lastRx < quietMs && Date.now() < until) await sleep(5);
+    if (this.rx.length) this.onLog?.('info', `dropped after a timeout: ${hex(this.rx)}`);
+    this.rx = [];
+    this.stale = false;
   }
 }
 
@@ -298,10 +366,10 @@ export class ModbusTransport implements Transport {
     readonly port: SerialPort,
     options: SerialOptions,
     readonly address: number,
-    timeoutMs?: number,
+    private timeoutMs = 500,
   ) {
     if (!Number.isInteger(address) || address < 1 || address > 32) throw new Error(`Pump address must be 1–32, not ${address}`);
-    this.bus = ModbusBus.for(port, options, timeoutMs);
+    this.bus = ModbusBus.for(port, options);
   }
 
   get lastRawHex(): string {
@@ -321,7 +389,7 @@ export class ModbusTransport implements Transport {
   }
 
   request(cmd: string, _expectReply: boolean): Promise<string | null> {
-    return this.bus.request(this.address, cmd, this.onLog);
+    return this.bus.request(this.address, cmd, this.onLog, this.timeoutMs);
   }
 }
 

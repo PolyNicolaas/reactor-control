@@ -87,16 +87,33 @@ export const runReading: SafetyRule = {
 };
 
 /**
- * Shared derive() bookkeeping: "running" from the pump wins over the card's switch.
- * The pump saying "stopped" twice in a row turns the switch off (stop on the pump, end of its own program);
- * twice, so a poll that raced a start is ignored. Returns whether the pump turns now.
+ * Shared derive() bookkeeping: "running" from the pump wins over the card's switch, and Dispensed errs
+ * high, never low (the volume limit then stops early, not late).
+ *
+ * - The pump saying "stopped" on two polls in a row WHILE the card has it on turns the switch off (stop on
+ *   the pump, end of a program). Counted only while the switch is on, so a poll that raced a start does
+ *   not count, however long the pump sat idle before.
+ * - A start on the pump's keypad (running = 1, switch off) counts as pumping.
+ * - The rate is the set rate; if its read-back failed this poll, the last known one.
+ * - Time is counted when the pump runs now OR ran at the previous poll, over the whole time since then —
+ *   also across a gap with no replies (device.ts keeps the time of the last answered poll).
  */
-const stoppedPolls = new WeakMap<object, number>();
-export function reconcileRun(s: { switches: Record<string, boolean>; values: Record<string, number | undefined> }): boolean {
+interface RunMemory { stopped: number; rate: number; wasOn: boolean }
+const memory = new WeakMap<object, RunMemory>();
+
+export function pumpVolume(
+  s: { switches: Record<string, boolean>; values: Record<string, number | undefined> },
+  setRate: number | undefined,
+  dtSeconds: number,
+): { on: boolean; rate: number; added: number } {
+  const m = memory.get(s) ?? { stopped: 0, rate: 0, wasOn: false };
+  memory.set(s, m);
   const running = s.values.running;
-  const n0 = running === 0 ? (stoppedPolls.get(s) ?? 0) + 1 : 0;
-  stoppedPolls.set(s, n0);
-  if (n0 >= 2) s.switches.run = false;
-  // A keypad start: the pump says running although the card did not switch it on. Count it.
-  return running === 1 || (running === undefined && !!s.switches.run);
+  m.stopped = running === 0 && s.switches.run ? m.stopped + 1 : 0;
+  if (m.stopped >= 2) s.switches.run = false;
+  const on = running === 1 || (running === undefined && !!s.switches.run);
+  if (setRate !== undefined) m.rate = setRate;
+  const added = on || m.wasOn ? (m.rate * Math.max(0, dtSeconds)) / 60 : 0;
+  m.wasOn = on;
+  return { on, rate: on ? m.rate : 0, added };
 }

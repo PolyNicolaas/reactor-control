@@ -1,6 +1,6 @@
 import { MODBUS } from '../../core/protocol';
 import type { DeviceDriver } from '../../core/types';
-import { reconcileRun } from '../shared/innofluid/pumpSafety';
+import { pumpVolume } from '../shared/innofluid/pumpSafety';
 import { labV1Safety } from './safety';
 import { LabV1Sim } from './sim';
 
@@ -68,10 +68,9 @@ export const labV1: DeviceDriver = {
   formatSetpoint: (sp, v) => `${sp.cmd}=${v}`,
   stopCommands: [`W${REG.run}=0`],
   derive: (s, dt) => {
-    const on = reconcileRun(s);
-    const flow = on ? s.setpoints.flow ?? 0 : 0;
-    s.values.flow = flow;
-    s.values.dispensed = (s.values.dispensed ?? 0) + (flow * Math.min(dt, 10)) / 60;
+    const { rate, added } = pumpVolume(s, s.setpoints.flow, dt);
+    s.values.flow = rate;
+    s.values.dispensed = (s.values.dispensed ?? 0) + added;
   },
   safety: labV1Safety,
   simulate: () => new LabV1Sim().transport,

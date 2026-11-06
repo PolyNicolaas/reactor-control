@@ -66,6 +66,32 @@ describe('ST-HandyPump driver against the simulator (real Modbus frames)', () =>
     await dev.disconnect(true);
   });
 
+  it('one "stopped" poll that races a start does not switch the pump off, however long it sat idle', () => {
+    const s = snap({ running: 0 }, { speed: 100 }, { run: false });
+    for (let i = 0; i < 20; i++) handyPump.derive!(s, 1, { mlPerRev: 1 }); // idle for 20 polls
+    s.switches.run = true; // Pump on from the card
+    handyPump.derive!(s, 1, { mlPerRev: 1 }); // this poll read R1000 just before the start
+    expect(s.switches.run).toBe(true);
+    handyPump.derive!(s, 1, { mlPerRev: 1 });
+    expect(s.switches.run).toBe(false); // twice while on: the pump really stopped
+  });
+
+  it('Dispensed errs high: a failed speed read uses the last speed, and a gap with no replies is counted', () => {
+    const s = snap({ running: 1, dispensed: 0 }, { speed: 60 }, { run: true });
+    handyPump.derive!(s, 1, { mlPerRev: 1 }); // 60 mL/min for 1 s = 1 mL
+    expect(s.values.dispensed).toBeCloseTo(1, 6);
+    s.setpoints.speed = undefined; // RF1002 timed out this poll
+    handyPump.derive!(s, 1, { mlPerRev: 1 });
+    expect(s.values.dispensed).toBeCloseTo(2, 6);
+    handyPump.derive!(s, 30, { mlPerRev: 1 }); // 30 s without replies, then it answers again
+    expect(s.values.dispensed).toBeCloseTo(32, 6);
+    s.values.running = 0; // stopped some time in that gap: counted to this poll (high, not low)
+    handyPump.derive!(s, 5, { mlPerRev: 1 });
+    expect(s.values.dispensed).toBeCloseTo(37, 6);
+    handyPump.derive!(s, 5, { mlPerRev: 1 });
+    expect(s.values.dispensed).toBeCloseTo(37, 6);
+  });
+
   it('shows the pump\'s refusal in words', async () => {
     const { dev } = await connect();
     await expect(dev.raw('W1500=1')).rejects.toThrow(/no such register/);

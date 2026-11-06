@@ -1,6 +1,6 @@
 import { MODBUS } from '../../core/protocol';
 import type { DeviceDriver } from '../../core/types';
-import { reconcileRun } from '../shared/innofluid/pumpSafety';
+import { pumpVolume } from '../shared/innofluid/pumpSafety';
 import { handyPumpSafety } from './safety';
 import { HandyPumpSim } from './sim';
 
@@ -66,11 +66,12 @@ export const handyPump: DeviceDriver = {
   stopCommands: [`W${REG.run}=0`],
   // No keypad lock to release: the pump's keys stay live while it is under Modbus control.
   derive: (s, dt, set) => {
-    const on = reconcileRun(s);
-    const speed = on ? s.setpoints.speed ?? 0 : 0;
-    s.values.speed = speed;
-    s.values.flow = speed * (set.mlPerRev ?? DEFAULT_ML_PER_REV);
-    s.values.dispensed = (s.values.dispensed ?? 0) + (s.values.flow * Math.min(dt, 10)) / 60;
+    const mlPerRev = set.mlPerRev ?? DEFAULT_ML_PER_REV;
+    const sp = s.setpoints.speed;
+    const { rate, added } = pumpVolume(s, sp === undefined ? undefined : sp * mlPerRev, dt);
+    s.values.flow = rate;
+    s.values.speed = rate === 0 ? 0 : sp ?? rate / mlPerRev;
+    s.values.dispensed = (s.values.dispensed ?? 0) + added;
   },
   safety: handyPumpSafety,
   simulate: () => new HandyPumpSim().transport,

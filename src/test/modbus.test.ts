@@ -62,10 +62,13 @@ function fakeBus(slaves: ModbusSlave[]) {
   const written: string[] = [];
   let opens = 0;
   let closes = 0;
+  /** Delay (ms) for the next reply only, to make a reply arrive after its timeout. */
+  const late = { ms: 0 };
   const port = {
     readable: null as ReadableStream<Uint8Array> | null,
     writable: null as WritableStream<Uint8Array> | null,
     open: async () => {
+      if (port.readable) throw new Error('already open');
       opens++;
       port.readable = new ReadableStream<Uint8Array>({ start: (c) => { ctl = c; } });
       port.writable = new WritableStream<Uint8Array>({
@@ -74,10 +77,15 @@ function fakeBus(slaves: ModbusSlave[]) {
           for (const s of slaves) {
             const r = s.handle(b);
             if (!r) continue;
+            const d = late.ms || 4;
+            late.ms = 0;
+            // A reply to a port that has since closed is lost, as on the real wire.
+            const send = (c: ReadableStreamDefaultController<Uint8Array>, b: Uint8Array) => { try { c.enqueue(b); } catch { /* closed */ } };
+            const c = ctl;
             setTimeout(() => {
-              ctl.enqueue(r.slice(0, 3));
-              setTimeout(() => ctl.enqueue(r.slice(3)), 3);
-            }, 4);
+              send(c, r.slice(0, 3));
+              setTimeout(() => send(c, r.slice(3)), 3);
+            }, d);
           }
         },
       });
@@ -85,7 +93,13 @@ function fakeBus(slaves: ModbusSlave[]) {
     close: async () => { closes++; port.readable = null; port.writable = null; },
     getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6001 }),
   };
-  return { port: port as unknown as SerialPort, written, opens: () => opens, closes: () => closes, inject: (b: number[]) => ctl.enqueue(Uint8Array.from(b)) };
+  return {
+    port: port as unknown as SerialPort, written, late,
+    opens: () => opens, closes: () => closes,
+    inject: (b: number[]) => ctl.enqueue(Uint8Array.from(b)),
+    /** A read error on the port, like a parity error or the adapter unplugged. */
+    fail: () => ctl.error(new Error('Parity error')),
+  };
 }
 
 describe('two pumps on one RS-485 cable', () => {
@@ -145,6 +159,53 @@ describe('two pumps on one RS-485 cable', () => {
     await wait(2);
     expect(await a.request('R1001', true)).toBe('1');
     await a.close();
+  });
+
+  it('a reply that comes after its timeout is not taken as the answer to the next request', async () => {
+    const { lv, bus, b } = setup();
+    await b.open();
+    lv.slave.set(1008, 1);
+    bus.late.ms = 260; // the running reply comes 60 ms after the 200 ms timeout
+    await expect(b.request('R1008', true)).rejects.toThrow(/No reply/);
+    expect(await b.request('R1020', true)).toBe('1'); // the mode, not the late "running = 1"
+    lv.slave.set(1020, 0);
+    expect(await b.request('R1020', true)).toBe('0');
+    await b.close();
+  });
+
+  it('a read error tells every card, and Reconnect opens the port afresh', async () => {
+    const { bus, a, b } = setup();
+    let lost = 0;
+    a.onDisconnect = () => lost++;
+    b.onDisconnect = () => lost++;
+    await a.open();
+    await b.open();
+    bus.fail();
+    await wait(20);
+    expect(lost).toBe(2);
+    expect(bus.closes()).toBe(1);
+    // Reconnect pump 1 only (pump 2's card is still on the page, disconnected).
+    const a2 = transportFor(bus.port, MODBUS_LINK(1), 200);
+    await a2.open();
+    expect(bus.opens()).toBe(2);
+    expect(await a2.request('R1001', true)).toBe('1');
+    await a2.close();
+  });
+
+  it('a card joining while the last one is leaving still gets an open port', async () => {
+    const { bus, a, b } = setup();
+    await a.open();
+    const leaving = a.close();
+    await b.open();
+    await leaving;
+    expect(await b.request('R1008', true)).toBe('0');
+    expect(bus.opens()).toBe(2);
+    await b.close();
+  });
+
+  it('a float read cannot be answered by a one-register reply', () => {
+    const rd = parseCommand('RF1002');
+    expect(() => decodeReply('RF1002', 1, rd, encodeRequest(1, rd).frame, withCrc([1, 3, 2, 0, 1, 0, 0]))).toThrow(/data bytes/);
   });
 
   it('allows two cards on one port only at different addresses', () => {

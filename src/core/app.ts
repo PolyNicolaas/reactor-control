@@ -372,7 +372,8 @@ export class App {
         const drv = getDriver(s.model);
         const candidates = ports.filter((p) => {
           const i = p.getInfo();
-          return !usedPorts.has(p) && i.usbVendorId === s.usbVendorId && i.usbProductId === s.usbProductId;
+          // Skip ports a restored unit already holds (an RS-485 pump bus can share USB ids with an IKA cable).
+          return !usedPorts.has(p) && !this.portOwner(p) && i.usbVendorId === s.usbVendorId && i.usbProductId === s.usbProductId;
         });
         for (const port of candidates) {
           try {
