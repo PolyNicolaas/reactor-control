@@ -141,6 +141,13 @@ export function expectedLength(buf: number[], normal: number, fn: number): numbe
 
 const buses = new WeakMap<SerialPort, ModbusBus>();
 
+/**
+ * How long to wait for a pump's reply. A reply takes ~10 ms on the wire at 9600 baud; the pumps' own
+ * response time is not in the manuals (bench check). Kept short because a pump that does not answer
+ * holds the shared cable for this long on each poll.
+ */
+export const DEFAULT_TIMEOUT_MS = 300;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export class ModbusBus {
@@ -277,7 +284,7 @@ export class ModbusBus {
   }
 
   /** Send one command to one pump and wait for its reply. One frame on the wire at a time. */
-  request(address: number, cmdText: string, log?: (dir: 'tx' | 'rx' | 'info', text: string) => void, timeoutMs = 500): Promise<string | null> {
+  request(address: number, cmdText: string, log?: (dir: 'tx' | 'rx' | 'info', text: string) => void, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string | null> {
     const run = async (): Promise<string | null> => {
       const c = parseCommand(cmdText);
       const { frame, replyLength } = encodeRequest(address, c);
@@ -366,7 +373,7 @@ export class ModbusTransport implements Transport {
     readonly port: SerialPort,
     options: SerialOptions,
     readonly address: number,
-    private timeoutMs = 500,
+    private timeoutMs = DEFAULT_TIMEOUT_MS,
   ) {
     if (!Number.isInteger(address) || address < 1 || address > 32) throw new Error(`Pump address must be 1–32, not ${address}`);
     this.bus = ModbusBus.for(port, options);

@@ -70,9 +70,10 @@ export const noStirring: SafetyRule = {
 export const runReading: SafetyRule = {
   key: 'runReading',
   label: 'Run reading',
-  why: 'The other rules and Dispensed rely on the pump saying whether it is turning. If that reading stays missing while the pump is switched on, a start or stop made on the pump would go unseen, so the pump is stopped.',
+  why: 'The other rules and Dispensed rely on the pump saying whether it is turning. If that reading stays missing while the pump is switched on (a register the pump will not read, or the pump not answering at all), a start or stop made on the pump would go unseen and no other rule could act, so the pump is stopped. If the pump is not answering, the stop is repeated every 5 s and goes through as soon as it answers again.',
   switches: ['run'],
   required: true,
+  whileSilent: true, // the pump going quiet altogether is exactly what this rule is for
   settings: [{ key: 'runLostS', label: 'Stop after no run reading for', unit: 's', default: 10, min: 3, max: 60, step: 1 }],
   evaluate({ s, set, mem, now }) {
     if (s.values.running !== undefined) mem.lastSeen = now;

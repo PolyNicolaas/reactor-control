@@ -163,5 +163,6 @@ Then record what happened in each module's `notes.md` (the bench checks listed t
 | One pump answers, another does not | Its address, its A/B, or its settings; two pumps with the same address answer at once and garble each other |
 | "Bad checksum" now and then | Add termination; shorten stubs; connect ground; keep the bus away from the hotplate's mains lead |
 | "pump busy" | The pump is in a menu: go back to its main screen |
+| A pump answers in the bench terminal but often shows "No reply" on its card | It may answer slower than the app waits (300 ms). Note the reply time in its `notes.md` and raise `DEFAULT_TIMEOUT_MS` in `src/core/modbus.ts` |
 | "no such register" on `R1000` | The pump does not use the register map the module expects — note the model and firmware in `notes.md` |
 | The port is in use | Another tab or app has it open; close it (only one program can own the port) |

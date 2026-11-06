@@ -164,6 +164,12 @@ export interface SafetyRule {
   defaultOn?: boolean;
   /** Cannot be turned off (the static floor, e.g. the plate maximum). */
   required?: boolean;
+  /**
+   * Also run while the unit is not answering (normally rules run only on answered polls). For a rule about
+   * missing replies itself, e.g. a pump's Run reading: its trip latches, and the stop is repeated every 5 s
+   * until the unit answers and takes it.
+   */
+  whileSilent?: boolean;
   /** The function (card section) it belongs to; default: the function of the first switch it stops. */
   group?: string;
   /** Armed only while a module providing this capability is on the page, e.g. "stirrer". */

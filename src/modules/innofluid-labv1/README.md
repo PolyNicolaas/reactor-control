@@ -32,7 +32,7 @@ Manual facts: [`docs/manuals/innofluid-labv1/notes.md`](../../../docs/manuals/in
 
 | Rule | Trips when | Default | Turns off |
 | --- | --- | --- | --- |
-| Run reading *(always on)* | no run report for 10 s while switched on | 10 s | the pump |
+| Run reading *(always on, runs even while the pump is silent)* | no run report for 10 s while switched on, including no reply at all (the stop repeats every 5 s until the pump takes it) | 10 s | the pump |
 | Transfer mode | the pump is running in a dispensing mode (1020 ≠ 0) | on | the pump |
 | Volume limit | Dispensed reaches the maximum | off (10 mL) | the pump |
 | Dose only while stirring *(with stirrer)* | pumping while nothing on the page stirs, for N s | 5 s | the pump |

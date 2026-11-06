@@ -63,6 +63,7 @@ example `41 A0 00 07` is not 20.0 (that is `41 A0 00 00`), and its `set_flow_vol
 
 ## Bench checks
 
+- [ ] Reply time: longest time from request to reply (the app waits 300 ms: raise `DEFAULT_TIMEOUT_MS` in `core/modbus.ts` if the pump is slower).
 - [ ] Rear connector type and pins for A+, B−, GD1; note here and in the adapter guide.
 - [ ] Even parity; registers readable with 03 (`R1001`, `R1008`, `RF1004`, `RF1002`, `R1020`).
 - [ ] Does writing 1004 work in the pump's speed mode, or must the pump be in flow-rate mode? Flow units mL/min?

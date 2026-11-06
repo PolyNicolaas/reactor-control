@@ -54,6 +54,7 @@ Worked examples (p. 3–4), all reproduced by `src/test/modbus.test.ts`: start `
 
 ## Bench checks
 
+- [ ] Reply time: longest time from request to reply (the app waits 300 ms: raise `DEFAULT_TIMEOUT_MS` in `core/modbus.ts` if the pump is slower).
 - [ ] Pump-side connector, pins for A+, B−, ground; note them here and in the adapter guide.
 - [ ] Settings menu: RS485/RS232 choice, baud, Slave No., communication on — and whether the pump only answers on its main screen (the LabV does).
 - [ ] `R1001`, `R1000`, `RF1002` answer (function 03 on these registers). **If not, the module needs another way to see "running" (D60).**

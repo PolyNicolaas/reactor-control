@@ -100,5 +100,5 @@ Cards, polling, chart, STOP ALL, recording and the safety engine pick it up auto
 | `src/modules/` | One folder per device module (`module.ts`, `safety.ts`, `sim.ts`, tests, README), `_template/`, `shared/` (NAMUR simulator base, safety test helpers, `innofluid/`: Modbus simulator, pump rules, RS-485 wiring guide), `index.ts` (the list of modules), [`README.md`](src/modules/README.md) (the guide) |
 | `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |
 | `src/ui/` | Cards (devices, cameras), add device/camera, chart, bench terminal, CSV and zip export |
-| `src/test/` | Tests of the shared core (vitest); module tests live in each module's folder |
+| `src/test/` | Tests of the shared core (vitest); module tests live in each module's folder. `rs485Cable.ts` simulates an RS-485 cable for whole-app tests of the Modbus pumps (`innofluid-bus.test.ts`) |
 | `scripts/manuals.mjs` | Manual library: fetch, check, index |

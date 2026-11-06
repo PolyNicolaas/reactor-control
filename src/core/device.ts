@@ -199,7 +199,14 @@ export class DeviceInstance {
     const parse = this.driver.parse ?? parseNumber;
     let ok = 0;
     let fail = 0;
+    // A unit that stopped answering is asked ONE thing per poll until it answers again: every unanswered
+    // command costs a full timeout, and on a shared line (several pumps on one RS-485 cable) that time is
+    // taken from the units that do answer, and from their safety rules. The rest read as missing.
+    const probing = !this.responding;
+    let asked = false;
     const read = async (cmd: string) => {
+      if (probing && asked) return undefined;
+      asked = true;
       try {
         const r = await this.transport.request(cmd, true);
         if (r !== null && !this.protocol.replyFits(cmd, r)) {
@@ -221,7 +228,7 @@ export class DeviceInstance {
       let v: number | undefined;
       if (r.optional) {
         // Not answering is expected until the user acts on the unit: no error, retry slowly.
-        if (!this.isValid(r.key) || Date.now() < (this.retryAt[r.key] ?? 0)) {
+        if (probing || !this.isValid(r.key) || Date.now() < (this.retryAt[r.key] ?? 0)) {
           v = undefined;
         } else {
           try {
@@ -302,6 +309,10 @@ export class DeviceInstance {
       }
       await this.checkSafety();
       this.detectChanges(prevSetpoints);
+    } else if (this.driver.safety?.rules.some((r) => r.whileSilent)) {
+      // Not answering: only rules written for that case run (a pump's Run reading). Their stop is sent and
+      // repeated every 5 s, so it goes through the moment the unit answers again.
+      await this.checkSafety(true);
     }
   }
 
@@ -350,9 +361,10 @@ export class DeviceInstance {
    * condition lasts, the off command is repeated every 5 s in case someone turns it back on at the unit.
    * Rules that watch other modules are armed and disarmed as those modules join or leave the page.
    */
-  private async checkSafety(): Promise<void> {
+  private async checkSafety(silentOnly = false): Promise<void> {
     const now = Date.now();
     for (const rule of this.driver.safety?.rules ?? []) {
+      if (silentOnly && !rule.whileSilent) continue;
       if (rule.withPeer) {
         const with_ = this.peers().filter((p) => p !== this && (p.driver.provides ?? []).includes(rule.withPeer!)).map((p) => p.label).join(', ');
         if (with_ !== (this.armedWith[rule.key] ?? '')) {

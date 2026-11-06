@@ -41,7 +41,7 @@ covers both Innofluid modules: which adapter to buy or build, how to daisy-chain
 
 | Rule | Trips when | Default | Turns off |
 | --- | --- | --- | --- |
-| Run reading *(always on)* | the pump stops reporting whether it runs, for 10 s, while switched on | 10 s | the pump |
+| Run reading *(always on, runs even while the pump is silent)* | the pump stops reporting whether it runs, for 10 s, while switched on — a register it will not read, or no reply at all (the stop then repeats every 5 s until the pump takes it) | 10 s | the pump |
 | Volume limit | Dispensed reaches the maximum. Holds **mL per revolution**, used for Flow and Dispensed | off (10 mL) | the pump |
 | Dose only while stirring *(with stirrer)* | the pump runs (switch or keypad) while nothing on the page stirs, for N s | 5 s | the pump |
 

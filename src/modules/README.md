@@ -103,6 +103,7 @@ const myRule: SafetyRule = {
   settings: [{ key: 'torqueMax', label: 'Max torque', unit: 'Ncm', default: 30, min: 1, max: 60, step: 1 }],
   defaultOn: false,              // on/off toggle on the card; false when the right setting depends on the run
   required: false,               // true = cannot be turned off (the static floor)
+  whileSilent: false,            // true = also runs while the unit does not answer (a rule about missing replies)
   withPeer: undefined,           // or e.g. 'stirrer': only armed while such a module is on the page
   watchesActivity: undefined,    // with withPeer: the partner's activity it depends on, e.g. 'stirring'
   watchNote: undefined,          // with withPeer: shown on the partner's card under "Watched by"; {torqueMax} is filled in
