@@ -13,6 +13,8 @@ Each existing module is a worked example. Read them in this order:
 | [`eurostar-60-control/`](eurostar-60-control/) | **Start here.** The smallest complete module: readings, one setpoint, one switch, one safety rule, simulator, tests. |
 | [`ret-control-visc/`](ret-control-visc/) | Readings that are only valid in some states, software tare, eight safety rules (static, learning, one that watches another module), HOT warning, a caution list. |
 | [`reglo-icc/`](reglo-icc/) | A different protocol, several channels on one card, values the app computes, safety rules generated per channel, a rule that watches *any* stirrer. |
+| [`innofluid-st-handypump/`](innofluid-st-handypump/) | A binary protocol (Modbus RTU, `core/modbus.ts`), several units on one cable (each card owns an address), a flow computed from rpm with a user setting (`derive(s, dt, set)`). |
+| [`innofluid-labv1/`](innofluid-labv1/) | A second register map on the same transport, an init command that sets the unit's mode, and a rule that guards it. Both Innofluid modules share `shared/innofluid/` (simulator, rules, RS-485 wiring guide). |
 | [`_template/`](_template/) | The skeleton to copy, every field explained. |
 
 ## What is in a module folder
@@ -43,7 +45,8 @@ docs/manuals/<module-id>/notes.md   facts from the manual, each with its page (k
       `['stirrer', 'overhead-stirrer']`. Other modules' safety rules find partners by these words, never
       by model name. Reuse an existing word when the unit does the same job; that is what lets a new
       stirrer be covered by the hotplate's and the pump's rules without touching them.
-   2. *Connection* — `serial` and `lineEnd` from the manual; `protocol` if it is not NAMUR (see `reglo-icc`).
+   2. *Connection* — `serial` and `lineEnd` from the manual; `protocol` if it is not NAMUR (see `reglo-icc`;
+      Modbus RTU units: `protocol: MODBUS` and registers as `R1000`/`RF1002`/`W1000=1`/`WF1002=1.5`, see `innofluid-st-handypump`).
    3. *Readings* — one entry per value to poll. Use `activity` for a reading that means "the unit is
       doing something" (speed above 20 rpm = `stirring`): it triggers camera clips and other modules'
       rules read it.
@@ -58,7 +61,8 @@ docs/manuals/<module-id>/notes.md   facts from the manual, each with its page (k
    reaction, and which reading would show it first?* If the honest answer today is "nothing the app
    can see", say so in the file and leave `rules: []` — the card then says the module has no rules.
 5. **Write `sim.ts`.** IKA/NAMUR units extend `shared/namurSim.ts` and only describe physics
-   (`step()`); other protocols write a small transport (see `reglo-icc/sim.ts`). Add `SIM_…` commands
+   (`step()`); other protocols write a small transport (see `reglo-icc/sim.ts`); Modbus units describe a
+   register bank with `shared/innofluid/modbusSim.ts`, which answers real frames. Add `SIM_…` commands
    for faults your safety rules must catch (`SIM_JAM`, `SIM_PROBE_OUT`, `SIM_PIN`).
 6. **Write the tests** next to the module: the simulator through a `DeviceInstance`, and every safety
    rule with `runSafety()` from `shared/testing.ts` — each rule must have a test where it trips and a
@@ -185,6 +189,7 @@ trip, or the last statuses. `peer()` makes a fake partner module for `withPeer` 
 - `hot: { key, above }` — HOT badge on the card while that reading is hot, MAY BE HOT after a disconnect (RET plate).
 - `cautions` — reference lists under a ⚠ on the card, flagged against live values (RET solvent autoignition list).
 - `optional`, `validWhen`, `tareable`, `stable` on readings — for values the unit gives only sometimes (RET balance).
-- `groups`, `derive()` — several channels on one card; values the app computes (Reglo).
+- `groups`, `derive()` — several channels on one card; values the app computes (Reglo). `derive` also gets the
+  unit's safety settings, for a calibration the user enters (Innofluid ST-HandyPump: mL per revolution).
 - `initCommands`, `formatSetpoint`, `parse` — protocol details (Reglo).
 - `watchdog` — documented unit watchdog, used once bench-tested.

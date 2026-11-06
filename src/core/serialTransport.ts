@@ -1,4 +1,5 @@
 import { protocolOf } from './protocol';
+import { ModbusTransport } from './modbus';
 import type { SerialLink, Transport } from './types';
 
 /**
@@ -172,9 +173,16 @@ export class SerialTransport implements Transport {
   }
 }
 
-/** A transport with the framing a saved or probed link needs. */
-export function transportFor(port: SerialPort, link: SerialLink, timeoutMs?: number): SerialTransport {
+/** A transport with the framing a saved or probed link needs. Modbus units share one bus per port. */
+export function transportFor(port: SerialPort, link: SerialLink, timeoutMs?: number): Transport & { port: SerialPort } {
+  if (link.protocol === 'modbus') return new ModbusTransport(port, link.options, link.address ?? 1, timeoutMs);
   return new SerialTransport(port, link.options, link.lineEnd, timeoutMs, undefined, protocolOf(link).statusReplies);
+}
+
+/** Two cards may use the same port only when both are Modbus units at different addresses. */
+export function portConflict(a: SerialLink | undefined, b: SerialLink | undefined): boolean {
+  if (a?.protocol === 'modbus' && b?.protocol === 'modbus') return a.address === b.address;
+  return true;
 }
 
 export function sleep(ms: number): Promise<void> {

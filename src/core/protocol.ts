@@ -6,9 +6,11 @@ import { NAMUR_SERIAL, type SerialLink } from './types';
  * - NAMUR (IKA): 9600 7E1, CR LF, writes are not acknowledged, IN_NAME identifies.
  * - Ismatec (Reglo ICC): 9600 8N1, CR, every command answers "*" (ok), "#" (refused),
  *   "+"/"-" (yes/no, or "cannot run"), case-sensitive commands, "1#" identifies.
+ * - Modbus RTU (Innofluid pumps): 9600 8E1, binary frames with a CRC, several units on one RS-485
+ *   cable told apart by address. The transport (core/modbus.ts) turns short text commands into frames.
  */
 export interface Protocol {
-  id: 'namur' | 'ismatec';
+  id: 'namur' | 'ismatec' | 'modbus';
   /** Command that makes the unit say what it is. */
   identifyCmd: string;
   /** Serial settings tried, in order, when asking an unknown port for its name. */
@@ -82,8 +84,30 @@ export const ISMATEC: Protocol = {
   benchHint: 'Commands are case-sensitive and start with the channel number (1–4; pump-wide commands such as 1# ignore it). Every command gets a reply: * = done, # = refused, +/- = yes/no.',
 };
 
-export const PROTOCOLS: Protocol[] = [NAMUR, ISMATEC];
+const SERIAL_8E1: SerialOptions = { ...NAMUR_SERIAL, dataBits: 8, parity: 'even' };
+
+export const MODBUS: Protocol = {
+  id: 'modbus',
+  // Modbus units have no name to ask for. Register 1001 exists on both Innofluid maps (direction on the
+  // ST-HandyPump, tubing size on the LabV): any proper reply proves a pump is at that address.
+  identifyCmd: 'R1001',
+  // Not tried by Auto-detect: binary frames sent to an IKA unit are noise, and a Modbus unit cannot
+  // say what it is. The user picks the model and the pump's address in Add device.
+  probes: [],
+  statusReplies: false,
+  acked: true, // writes are echoed; the transport checks the echo and throws on an exception reply
+  caseSensitive: false,
+  expectsReply: () => true,
+  replyFits: () => true, // address, function and CRC are checked by the transport
+  checkAck: () => {},
+  benchCommands: ['R1001', 'R1000', 'RF1002', 'R1008', 'RF1004', 'R1020'],
+  benchHint: 'R1000 reads a register, RF1002 reads a float, W1000=1 writes a whole number, WF1002=58.8 writes a float. The pump address is added for you. Errors from the pump are shown in words.',
+};
+
+export const MODBUS_LINK = (address: number): SerialLink => ({ options: SERIAL_8E1, lineEnd: '', protocol: 'modbus', address });
+
+export const PROTOCOLS: Protocol[] = [NAMUR, ISMATEC, MODBUS];
 
 export function protocolOf(link?: SerialLink): Protocol {
-  return link?.protocol === 'ismatec' ? ISMATEC : NAMUR;
+  return link?.protocol === 'ismatec' ? ISMATEC : link?.protocol === 'modbus' ? MODBUS : NAMUR;
 }

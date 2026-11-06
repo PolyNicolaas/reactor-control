@@ -1,9 +1,9 @@
 import { DeviceInstance, type DeviceEvent } from './device';
 import { Emitter } from './emitter';
-import { SerialTransport, transportFor } from './serialTransport';
+import { portConflict, transportFor } from './serialTransport';
 import { getDriver } from '../modules';
 import { detectDriver } from '../modules';
-import { probeName, recognises } from './probe';
+import { probeModbus, probeName, recognises } from './probe';
 import { CameraModule, type MediaOut } from '../camera/camera';
 import { mediaStore } from '../camera/mediaStore';
 import type { SerialLink, Transport } from './types';
@@ -187,9 +187,12 @@ export class App {
     this.changed.emit();
   }
 
-  /** The device already using this port, if any (picking it again would cut that device off). */
-  portOwner(port: SerialPort): DeviceInstance | undefined {
-    return this.devices.find((d) => d.connected && d.transport instanceof SerialTransport && d.transport.port === port);
+  /**
+   * The device already using this port, if any (picking it again would cut that device off).
+   * Modbus pumps on one RS-485 cable share a port; only the same address there is a conflict.
+   */
+  portOwner(port: SerialPort, link?: SerialLink): DeviceInstance | undefined {
+    return this.devices.find((d) => d.connected && d.transport.port === port && portConflict(d.link, link));
   }
 
   /** Stops every connected unit. Returns the units where a stop command failed, and those not connected. */
@@ -279,7 +282,7 @@ export class App {
   save(): void {
     if (this.restoring) return;
     this.config.devices = this.devices.map((d) => {
-      const info = d.transport instanceof SerialTransport ? d.transport.port.getInfo() : {};
+      const info = d.transport.port?.getInfo() ?? {};
       return {
         id: d.id,
         model: d.driver.model,
@@ -347,6 +350,22 @@ export class App {
       let transport: Transport | undefined;
       if (s.sim) {
         transport = getDriver(s.model).simulate();
+      } else if (s.link?.protocol === 'modbus') {
+        // Modbus pumps on one cable share a port and have no name: ask each candidate port whether a
+        // pump answers at this card's address. The port may already be used by another pump's card.
+        const candidates = ports.filter((p) => {
+          const i = p.getInfo();
+          return i.usbVendorId === s.usbVendorId && i.usbProductId === s.usbProductId && !this.portOwner(p, s.link);
+        });
+        for (const port of candidates) {
+          try {
+            await probeModbus(port, s.link);
+            transport = transportFor(port, s.link);
+            break;
+          } catch {
+            /* nothing at that address on this port */
+          }
+        }
       } else {
         // Identical units share USB ids, so ask each candidate port for its name and only take
         // the one this device's driver recognises (otherwise a saved "stirrer" could grab the hotplate).

@@ -1,6 +1,5 @@
 import type { App } from '../core/app';
 import type { DeviceInstance } from '../core/device';
-import { SerialTransport } from '../core/serialTransport';
 import { h, openDialog } from './dom';
 
 /** Bench terminal: send raw commands to one device and see the replies. */
@@ -19,7 +18,7 @@ export function openTerminal(app: App, dev: DeviceInstance): void {
       line('tx', `> ${cmd}`);
       try {
         const r = await dev.raw(cmd);
-        const hex = dev.transport instanceof SerialTransport ? dev.transport.lastRawHex : '';
+        const hex = dev.transport.lastRawHex ?? '';
         line('rx', r === null ? '(sent, no reply expected)' : `< ${r}${hex ? `   [${hex}]` : ''}`);
       } catch (e) {
         line('err', `! ${(e as Error).message}`);

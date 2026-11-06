@@ -100,6 +100,95 @@
       "lastFeatureReview": "2026-10-28"
     },
     {
+      "id": "innofluid-st-handypump",
+      "name": "Innofluid ST-HandyPump (HandyPump01 head)",
+      "kind": "Peristaltic pump",
+      "status": "driver-ready",
+      "driver": "src/modules/innofluid-st-handypump/module.ts",
+      "notes": "docs/manuals/innofluid-st-handypump/notes.md",
+      "identifiesAs": "",
+      "connection": "RS-485 Modbus RTU (9600 8E1, address 1–32, several pumps per cable) via USB–RS-485 adapter; RS-232 not used",
+      "buy": "Elexan Scientific (quote 2611051v1: 2 × ST-HandyPump); adapter and cable: Darwin Microfluidics SE-USB-RS232/485, SE-WK-G02",
+      "documents": [
+        {
+          "title": "Standard MODBUS Communication Protocol",
+          "docNo": "",
+          "edition": "undated",
+          "language": "EN",
+          "pages": 5,
+          "interfacePages": "1-5",
+          "file": "Standard_RS485_Modbus_Communication_Protocol.pdf",
+          "url": "(supplied by the vendor; no public URL)",
+          "sha256": "eea37ad839130bec1e9e3ab2cbe0f899da79cba1fde3d78bdcbc8796414b7643",
+          "retrieved": "2026-11-06"
+        },
+        {
+          "title": "N Series RS232 Interface Instruction (not used)",
+          "docNo": "",
+          "edition": "undated",
+          "language": "EN",
+          "pages": 1,
+          "interfacePages": "1",
+          "file": "RS232_Communication_Command_Instruction_for_N_series.pdf",
+          "url": "(supplied by the vendor; no public URL)",
+          "sha256": "20d9ce53da34e6af7fe92e3a1c5e2ca24fdfd29d6c4006669f7a08450dceec48",
+          "retrieved": "2026-11-06"
+        }
+      ],
+      "watch": [
+        "https://www.drifton.eu/shop/8-basic-peristaltic-pumps/2569-st-handypump-peristaltic-pump/",
+        "https://darwin-microfluidics.com/innofluid/",
+        "https://elexansci.com",
+        "search: Innofluid Modbus protocol peristaltic pump"
+      ],
+      "lastFeatureReview": "2026-11-06"
+    },
+    {
+      "id": "innofluid-labv1",
+      "name": "Innofluid LabV1-III (EasyPump III head)",
+      "kind": "Peristaltic pump (dispensing)",
+      "status": "driver-ready",
+      "driver": "src/modules/innofluid-labv1/module.ts",
+      "notes": "docs/manuals/innofluid-labv1/notes.md",
+      "identifiesAs": "",
+      "connection": "RS-485 Modbus RTU (9600 8E1, address 1–32, shares the cable with the ST-HandyPumps) via USB–RS-485 adapter",
+      "buy": "Elexan Scientific (quote 2611051v1: LabV1-EP3)",
+      "documents": [
+        {
+          "title": "Lab V Series MODBUS Protocol",
+          "docNo": "",
+          "edition": "",
+          "language": "EN",
+          "pages": 0,
+          "interfacePages": "all",
+          "file": "Lab-V-Series-MODBUS-Protocol.pdf",
+          "url": "https://darwin-microfluidics.com/content/pdfs/Lab-V-Series-MODBUS-Protocol.pdf",
+          "sha256": "",
+          "retrieved": "2026-11-06"
+        },
+        {
+          "title": "LabV Series user manual",
+          "docNo": "",
+          "edition": "",
+          "language": "EN",
+          "pages": 0,
+          "interfacePages": "external control, communication settings",
+          "file": "LabV-Series-Manual.pdf",
+          "url": "https://darwin-microfluidics.com/content/pdfs/LabV-Series-Manual.pdf",
+          "sha256": "",
+          "retrieved": "2026-11-06"
+        }
+      ],
+      "watch": [
+        "https://darwin-microfluidics.com/products/labv1-iii-intelligent-flow-rate-peristaltic-pump",
+        "https://blog.darwin-microfluidics.com/how-to-control-a-labv-pump-using-the-modbus-protocol/",
+        "https://darwin-microfluidics.com/innofluid/",
+        "https://elexansci.com",
+        "search: Innofluid Modbus protocol peristaltic pump"
+      ],
+      "lastFeatureReview": "2026-11-06"
+    },
+    {
       "id": "usb-camera",
       "name": "USB camera (UVC webcam)",
       "kind": "Camera",

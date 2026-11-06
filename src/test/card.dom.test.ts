@@ -23,7 +23,7 @@ describe('device card', () => {
       for (const r of rows) expect(r.querySelector('.rule-text')?.textContent, d.model).not.toBe('');
     }
     for (const dev of [...app.devices]) await app.removeDevice(dev);
-  });
+  }, 2000 * drivers.length + 5000); // 1.3 s of polling per module
 
   it('the RET card shows its stirring rule armed once an overhead stirrer is on the page', async () => {
     const app = new App();

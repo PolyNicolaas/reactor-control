@@ -271,8 +271,11 @@ export interface DeviceDriver {
   initCommands?: string[];
   /** Build the write for a setpoint; default "<cmd> <value>". */
   formatSetpoint?(sp: SetpointSpec, value: number): string;
-  /** Runs after every poll: compute derived readings, reconcile state. May edit the snapshot. */
-  derive?(s: DeviceSnapshot, dtSeconds: number): void;
+  /**
+   * Runs after every poll: compute derived readings, reconcile state. May edit the snapshot.
+   * `set` is this unit's safety settings (defaults + the user's), e.g. a pump's mL per revolution.
+   */
+  derive?(s: DeviceSnapshot, dtSeconds: number, set: Record<string, number>): void;
   /**
    * The unit's FUNCTIONS, in order (Heating, Stirring, Weighing; or pump channels). Each is one section of
    * the card holding its readings, setpoints, switches, safety rules and Watched by, and is what a method
@@ -288,7 +291,9 @@ export interface DeviceDriver {
 export interface SerialLink {
   options: SerialOptions;
   lineEnd: string;
-  protocol?: 'namur' | 'ismatec'; // absent in pages saved before the pump was added = namur
+  protocol?: 'namur' | 'ismatec' | 'modbus'; // absent in pages saved before the pump was added = namur
+  /** Modbus only: the unit's address on the RS-485 bus (1–32). Several units can share one port. */
+  address?: number;
 }
 
 /** Something that carries command lines to a device: Web Serial or the simulator. */
@@ -296,6 +301,10 @@ export interface Transport {
   readonly kind: 'serial' | 'sim';
   open(): Promise<void>;
   close(): Promise<void>;
+  /** The serial port it uses (absent for simulators). */
+  readonly port?: SerialPort;
+  /** Raw bytes of the last reply, as hex, for the bench terminal. */
+  readonly lastRawHex?: string;
   /** Send one command. If expectReply, resolves with the reply line. */
   request(cmd: string, expectReply: boolean): Promise<string | null>;
   onDisconnect?: () => void;

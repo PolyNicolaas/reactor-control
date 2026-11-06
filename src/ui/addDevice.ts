@@ -1,9 +1,9 @@
 import { savedSafety } from '../core/app';
 import type { App, SavedDevice } from '../core/app';
 import type { DeviceInstance } from '../core/device';
-import { SerialTransport, describePort, serialSupported, transportFor } from '../core/serialTransport';
-import { NAMUR } from '../core/protocol';
-import { probeName, recognises, type ProbeResult } from '../core/probe';
+import { describePort, serialSupported, transportFor } from '../core/serialTransport';
+import { MODBUS_LINK, NAMUR } from '../core/protocol';
+import { probeModbus, probeName, recognises, type ProbeResult } from '../core/probe';
 import { detectDriver, drivers, getDriver } from '../modules';
 import { h, openDialog, toast } from './dom';
 import type { DeviceDriver, SerialLink } from '../core/types';
@@ -17,6 +17,11 @@ export function openAddDevice(app: App): void {
       ...drivers.map((d) => h('option', { value: d.model }, `${d.displayName} — ${d.kind}`)),
     ) as HTMLSelectElement;
     const label = h('input', { type: 'text', placeholder: 'e.g. Hotplate, Overhead stirrer' }) as HTMLInputElement;
+    // Modbus units (Innofluid pumps) share one RS-485 cable and are told apart by address.
+    const address = h('input', { type: 'number', min: '1', max: '32', step: '1', value: '1' }) as HTMLInputElement;
+    const addressRow = h('label', { hidden: true }, 'Pump address on the RS-485 cable (Slave No. on the pump, 1–32)', address);
+    const isModbus = () => model.value !== 'auto' && getDriver(model.value).protocol?.id === 'modbus';
+    model.addEventListener('change', () => (addressRow.hidden = !isModbus()));
     const useSim = h('input', { type: 'checkbox' }) as HTMLInputElement;
     if (!serialSupported()) useSim.checked = true;
     const resetLabel = () => (go.textContent = useSim.checked ? 'Add simulated device' : 'Choose port and connect');
@@ -34,6 +39,28 @@ export function openAddDevice(app: App): void {
           const m = model.value === 'auto' ? drivers[0].model : model.value;
           const drv = getDriver(m);
           await app.addDevice({ model: m, label: label.value.trim() || drv.kind, transport: drv.simulate() });
+          close(true);
+          return;
+        }
+        if (isModbus()) {
+          const a = Number(address.value);
+          if (!Number.isInteger(a) || a < 1 || a > 32) throw new Error('The pump address is a whole number from 1 to 32 (the pump\'s Slave No.).');
+          const link = MODBUS_LINK(a);
+          // requestPort must run straight from the click. A port already used by other pumps on the same
+          // cable is fine: pumps share it, as long as the address differs.
+          const port = await navigator.serial.requestPort();
+          const owner = app.portOwner(port, link);
+          if (owner) throw new Error(`"${owner.label}" already uses address ${a} on this cable. Give each pump its own Slave No. on the pump and enter that here.`);
+          go.disabled = true;
+          go.textContent = `Asking pump ${a}…`;
+          try {
+            await probeModbus(port, link);
+          } catch (x) {
+            throw new Error(`No pump answered at address ${a} on ${describePort(port)} (${(x as Error).message}). On the pump: RS485 selected, 9600 baud, Slave No. ${a}, communication ON, and the main screen showing. Then check A/B wiring (see the module's RS-485 guide).`);
+          }
+          const drv = getDriver(model.value);
+          await app.addDevice({ model: drv.model, label: label.value.trim() || drv.kind, transport: transportFor(port, link), link });
+          toast(`${drv.displayName} connected (address ${a})`);
           close(true);
           return;
         }
@@ -90,6 +117,7 @@ export function openAddDevice(app: App): void {
       'form',
       { class: 'form', onsubmit: submit },
       h('label', {}, 'Model', model),
+      addressRow,
       h('label', {}, 'Name on this page', label),
       h('label', { class: 'check' }, useSim, ' Simulated device (no hardware)'),
       !serialSupported() && h('p', { class: 'hint' }, 'This browser has no Web Serial. Use Chrome or Edge on a computer, or Chromium on the Raspberry Pi, to connect real units.'),
@@ -107,8 +135,8 @@ export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<vo
       await dev.replaceTransport(dev.driver.simulate());
       return;
     }
-    const port = await navigator.serial.requestPort({ filters: portFilter(dev.transport instanceof SerialTransport ? dev.transport.port.getInfo() : {}) });
-    const owner = app.portOwner(port);
+    const port = await navigator.serial.requestPort({ filters: portFilter(dev.transport.port?.getInfo() ?? {}) });
+    const owner = app.portOwner(port, dev.link);
     if (owner && owner !== dev) throw new Error(`That port is already used by "${owner.label}".`);
     await dev.replaceTransport(transportFor(port, dev.link ?? defaultLink(dev.driver)));
     app.save();
@@ -121,7 +149,7 @@ export async function reconnectDevice(app: App, dev: DeviceInstance): Promise<vo
 export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
   try {
     const port = await navigator.serial.requestPort({ filters: portFilter(s) });
-    const owner = app.portOwner(port);
+    const owner = app.portOwner(port, s.link);
     if (owner) throw new Error(`That port is already used by "${owner.label}".`);
     app.forgetMissing(s.id);
     const drv = getDriver(s.model);
@@ -133,6 +161,7 @@ export async function reconnectSaved(app: App, s: SavedDevice): Promise<void> {
 
 /** The driver's own serial settings, for units saved before their settings were probed. */
 function defaultLink(drv: DeviceDriver): SerialLink {
+  if (drv.protocol?.id === 'modbus') return MODBUS_LINK(1);
   return { options: drv.serial, lineEnd: drv.lineEnd ?? '\r\n', protocol: (drv.protocol ?? NAMUR).id };
 }
 

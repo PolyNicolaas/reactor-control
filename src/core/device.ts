@@ -274,7 +274,7 @@ export class DeviceInstance {
     this.lastPoll = now;
     if (this.driver.derive && this.responding) {
       const before = { ...this.snapshot.switches };
-      this.driver.derive(this.snapshot, dt);
+      this.driver.derive(this.snapshot, dt, this.safetyValues());
       for (const sw of this.driver.switches) {
         if (before[sw.key] && !this.snapshot.switches[sw.key]) {
           this.log('error', `${this.specLabel(sw)} stopped on the unit itself (keypad, overload or end of a dose)`);

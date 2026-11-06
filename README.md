@@ -9,6 +9,8 @@ A browser control page for lab reactor equipment over Web Serial, run in Chromiu
 | IKA EUROSTAR 60 control | Overhead stirrer | Bench-tested |
 | IKA RET control-visc | Hotplate stirrer with balance | Bench-tested |
 | Ismatec Reglo ICC (4 channels) | Peristaltic pump | Driver ready, not yet bench-tested |
+| Innofluid ST-HandyPump | Peristaltic pump (RS-485 Modbus) | Driver ready, pumps on order |
+| Innofluid LabV1-III | Dispensing peristaltic pump (RS-485 Modbus) | Driver ready, pump on order |
 | USB camera (any UVC webcam) | Camera | Trial: time-lapse and change clips |
 
 Full list and status: [docs/MODULES.md](docs/MODULES.md).
@@ -33,7 +35,7 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 - Recording with notes; download as CSV (samples and events), or one zip including camera media. See [what is recorded](docs/DESIGN.md#3-what-is-recorded-and-saved).
 - RET balance with software tare. Per-setpoint user limits; confirmation before heating or large temperature jumps.
 - **Cameras** (Add camera): live view; a clip from 60 s before to 60 s after every change — setpoint or switch changes, stirring starting or stopping (also from the unit's own controls), setpoints changed on the unit — and the first change starts a recording by itself; a 720p time-lapse frame every 10 s while recording; snapshots; focus/exposure lock where supported. Media downloads with the recording as one zip.
-- Bench terminal per unit for raw commands (IKA NAMUR or Ismatec), with replies in text and hex.
+- Bench terminal per unit for raw commands (IKA NAMUR, Ismatec, or Modbus registers such as `R1000`), with replies in text and hex.
 
 ## Requirements
 
@@ -43,8 +45,9 @@ Full list and status: [docs/MODULES.md](docs/MODULES.md).
 - Linux / Raspberry Pi: the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in).
 - RET control-visc: turn **off** the "Eurostar" option in its system settings, otherwise the heater switches off when the serial cable is unplugged.
 - Reglo ICC: set each channel's tubing inner diameter and rotation direction on the pump. The app sets flow (mL/min) and start/stop.
+- Innofluid pumps: one USB–RS-485 adapter for all of them, daisy-chained; on each pump RS485, 9600 baud, its own Slave No. (address), communication ON, main screen showing. Wiring, adapter and first test: [src/modules/shared/innofluid/RS485-ADAPTER.md](src/modules/shared/innofluid/RS485-ADAPTER.md).
 
-Serial settings are found automatically (IKA: 9600 7E1, CR LF; Reglo ICC: 9600 8N1, CR).
+Serial settings are found automatically (IKA: 9600 7E1, CR LF; Reglo ICC: 9600 8N1, CR). Innofluid pumps (Modbus RTU, 9600 8E1) have no name to report: pick the model and enter the pump's address in Add device, and pick the same adapter port for each pump on the cable.
 
 Raspberry Pi station: flash Raspberry Pi OS (64-bit, desktop) with Raspberry Pi Imager, using the station name as hostname and the shared user `admin` (password from the lab; never commit it here). Then run the setup script with a station name from the list in [docs/DESIGN.md](docs/DESIGN.md#station-names-d38), then reboot. It sets up autologin, VNC, Wi-Fi and a browser window that opens the app on boot:
 
@@ -88,12 +91,13 @@ Cards, polling, chart, STOP ALL, recording and the safety engine pick it up auto
 | --- | --- |
 | `src/main.ts` | Page layout, recording controls, wiring |
 | `src/core/types.ts` | Driver interface (readings, setpoints, switches, groups, derived values) |
-| `src/core/protocol.ts` | Wire protocols: NAMUR (IKA) and Ismatec — framing, acknowledgements, identify, probe settings |
+| `src/core/protocol.ts` | Wire protocols: NAMUR (IKA), Ismatec and Modbus RTU — framing, acknowledgements, identify, probe settings |
+| `src/core/modbus.ts` | Modbus RTU over RS-485: frames, CRC, exceptions in words; several pumps share one port (one bus, an address per card) |
 | `src/core/serialTransport.ts` | Web Serial: one command in flight, line and one-character replies, timeouts, dropping late replies |
-| `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings |
+| `src/core/probe.ts` | Asks an unknown port what it is, trying each protocol's settings; checks a Modbus pump answers at its address |
 | `src/core/device.ts` | One unit: connect, polling, setpoints with read-back, switches, stop, release, the safety engine (rules, trips, reset) |
 | `src/core/app.ts` | Units on the page, saved page setup, 1 s sampler, recording |
-| `src/modules/` | One folder per device module (`module.ts`, `safety.ts`, `sim.ts`, tests, README), `_template/`, `shared/` (NAMUR simulator base, safety test helpers), `index.ts` (the list of modules), [`README.md`](src/modules/README.md) (the guide) |
+| `src/modules/` | One folder per device module (`module.ts`, `safety.ts`, `sim.ts`, tests, README), `_template/`, `shared/` (NAMUR simulator base, safety test helpers, `innofluid/`: Modbus simulator, pump rules, RS-485 wiring guide), `index.ts` (the list of modules), [`README.md`](src/modules/README.md) (the guide) |
 | `src/camera/` | Camera module: live view, time-lapse, clip buffer and WebM clips, media storage (IndexedDB) |
 | `src/ui/` | Cards (devices, cameras), add device/camera, chart, bench terminal, CSV and zip export |
 | `src/test/` | Tests of the shared core (vitest); module tests live in each module's folder |

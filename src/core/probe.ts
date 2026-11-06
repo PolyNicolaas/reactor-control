@@ -42,7 +42,7 @@ export async function probeName(
   let fallback: ProbeResult | undefined;
   const protocols = prefer ? [prefer, ...PROTOCOLS.filter((p) => p !== prefer)] : PROTOCOLS;
   const order = [
-    ...(first ? [{ label: 'saved setting', link: first }] : []),
+    ...(first && first.protocol !== 'modbus' ? [{ label: 'saved setting', link: first }] : []),
     ...protocols.flatMap((p) => p.probes),
   ];
   for (const p of order) {
@@ -54,7 +54,7 @@ export async function probeName(
       if (readable(name) && detectDriver(name)) return { name, link: p.link, label: p.label, attempts, ids: [] };
       if (readable(name)) fallback ??= { name, link: p.link, label: p.label, attempts, ids: [] };
       attempts.push(`${p.label}: "${name}" [${t.lastRawHex || 'no bytes'}]`);
-      if (protocolOf(p.link).id === 'namur' && blankLine(t.lastRawHex)) {
+      if (protocolOf(p.link).id === 'namur' && blankLine(t.lastRawHex ?? '')) {
         // Framing works (a CR LF line came back) but the name is blank. Ask other identity commands.
         const ids: string[] = [];
         for (const cmd of ['IN_TYPE', 'IN_SOFTWARE']) {
@@ -78,4 +78,18 @@ export async function probeName(
   const err = new Error('probe failed') as Error & { attempts: string[] };
   err.attempts = attempts;
   throw err;
+}
+
+/**
+ * Is a Modbus unit answering at this address? Modbus units have no name: any proper reply to the
+ * protocol's identify read (R1001) counts. Returns the reply; throws with a readable reason.
+ */
+export async function probeModbus(port: SerialPort, link: SerialLink): Promise<string> {
+  const t = transportFor(port, link, 600);
+  try {
+    await t.open();
+    return ((await t.request(protocolOf(link).identifyCmd, true)) ?? '').trim();
+  } finally {
+    await t.close();
+  }
 }
